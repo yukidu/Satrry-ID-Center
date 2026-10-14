@@ -1,0 +1,61 @@
+name: Verify Cloudflare D1 Connection
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-cloudflare.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Verify secrets are available
+        shell: bash
+        run: |
+          test -n "${CLOUDFLARE_API_TOKEN:-}" || (echo 'Missing CLOUDFLARE_API_TOKEN' && exit 1)
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || (echo 'Missing CLOUDFLARE_ACCOUNT_ID' && exit 1)
+      - name: Verify Starry central D1 exists
+        shell: bash
+        run: |
+          npx wrangler d1 list --json > /tmp/d1-list.json
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const raw = JSON.parse(fs.readFileSync('/tmp/d1-list.json','utf8'));
+          const rows = Array.isArray(raw) ? raw : (raw.result || []);
+          const db = rows.find(x => x.name === 'starry_id_db');
+          if (!db) throw new Error('starry_id_db not found in this Cloudflare account');
+          const id = db.uuid || db.id || '';
+          if (id !== '01195c92-555e-4816-bddc-5b8cb2e795db') throw new Error(`Unexpected starry_id_db id: ${id}`);
+          console.log(`starry_id_db connection OK: ${id}`);
+          NODE
+      - name: Read central D1 health data
+        shell: bash
+        run: |
+          npx wrangler d1 execute starry_id_db --remote --command "SELECT COUNT(*) AS users FROM users" --json > /tmp/starry-users.json
+          npx wrangler d1 execute starry_id_db --remote --command "SELECT COUNT(*) AS tables FROM sqlite_schema WHERE type='table' AND name NOT LIKE '_cf_%'" --json > /tmp/starry-tables.json
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          function first(path){
+            const raw=JSON.parse(fs.readFileSync(path,'utf8'));
+            const parts=Array.isArray(raw)?raw:(raw.result||[]);
+            return parts.flatMap(x=>x?.results||[])[0]||{};
+          }
+          const users=Number(first('/tmp/starry-users.json').users||0);
+          const tables=Number(first('/tmp/starry-tables.json').tables||0);
+          if (tables < 10) throw new Error(`Central D1 schema looks incomplete: ${tables} tables`);
+          console.log(`Read-only D1 verification OK: users=${users}, tables=${tables}`);
+          NODE
