@@ -118,6 +118,18 @@ CREATE TABLE IF NOT EXISTS public_cards (
 CREATE UNIQUE INDEX IF NOT EXISTS public_cards_slug ON public_cards(slug);
 CREATE UNIQUE INDEX IF NOT EXISTS public_cards_number ON public_cards(cardNumber);
 
+-- v251：公開電子名片視覺樣式。編輯頁與公開頁共用同一個固定主題。
+CREATE TABLE IF NOT EXISTS public_card_preferences (
+  userId TEXT PRIMARY KEY,
+  theme TEXT NOT NULL DEFAULT 'starry-cosmos' CHECK(theme IN (
+    'starry-cosmos','golden-prestige','aurora-realm','sunrise-paper','neon-pulse',
+    'forest-whisper','ocean-flow','sakura-ink','lunar-minimal','royal-gem'
+  )),
+  updatedAt INTEGER NOT NULL,
+  FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS public_card_preferences_theme ON public_card_preferences(theme);
+
 -- 若會員手動把電子名片編號改成較大的 n 編號，立即把 AUTOINCREMENT 水位推到該編號。
 -- 這樣未來新會員自動配號會從更大的號碼開始，不會撞到已被手動占用的編號。
 UPDATE sqlite_sequence
