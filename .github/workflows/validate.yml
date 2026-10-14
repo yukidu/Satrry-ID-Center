@@ -1,0 +1,37 @@
+name: Validate Starry ID Center
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: TypeScript check
+        run: npm run typecheck
+      - name: Shell syntax check
+        run: bash -n starry-id/provision-and-audit.sh
+      - name: JavaScript syntax check
+        run: |
+          node --check starry-id/read-count.mjs
+          node --check starry-id/verify-schema.mjs
+          node --check starry-id/write-audit-report.mjs
+      - name: Required database files
+        run: |
+          test -f starry-id/schema.sql
+          test -f starry-id/migrations/20261014_profile_options.sql
+          test -f starry-id/migrations/20261014_profile_schema.sql
+          test -f starry-id/migrations/20261014_notifications.sql
+          test -f starry-id/migrations/20261014_spouse_and_sso.sql
