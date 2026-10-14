@@ -13,7 +13,8 @@ const required = [
   'profile_field_schema', 'profile_extension_values', 'profile_schema_meta',
   'spouse_links', 'spouse_slots', 'non_distributor_ids', 'non_distributor_history',
   'starry_app_auth_codes', 'starry_notifications', 'card_visit_events',
-  'starry_push_subscriptions', 'starry_push_vapid'
+  'starry_push_subscriptions', 'starry_push_vapid',
+  'battery_transactions', 'battery_accounts', 'battery_migration_state'
 ];
 const missing = required.filter(name => !names.has(name));
 if (missing.length) throw new Error(`Central schema missing tables: ${missing.join(', ')}`);
