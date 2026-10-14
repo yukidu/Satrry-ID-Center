@@ -8,7 +8,7 @@ const rows = parts.flatMap(item => item?.results || []);
 const names = new Set(rows.map(row => row.name));
 const required = [
   'users', 'identities', 'profiles', 'member_relationships', 'app_memberships',
-  'auth_sessions', 'public_cards', 'profile_field_visibility', 'profile_option_values', 'legacy_links',
+  'auth_sessions', 'public_cards', 'public_card_preferences', 'profile_field_visibility', 'profile_option_values', 'legacy_links',
   'profile_audit_logs', 'migration_batches', 'migration_issues',
   'profile_field_schema', 'profile_extension_values', 'profile_schema_meta',
   'spouse_links', 'spouse_slots', 'non_distributor_ids', 'non_distributor_history',
