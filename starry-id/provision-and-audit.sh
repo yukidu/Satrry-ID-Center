@@ -18,6 +18,7 @@ npx wrangler d1 execute "$DB_NAME" --remote --file=starry-id/schema.sql --yes
 npx wrangler d1 execute "$DB_NAME" --remote --file=starry-id/migrations/20261014_profile_options.sql --yes
 npx wrangler d1 execute "$DB_NAME" --remote --file=starry-id/migrations/20261014_profile_schema.sql --yes
 npx wrangler d1 execute "$DB_NAME" --remote --file=starry-id/migrations/20261014_notifications.sql --yes
+npx wrangler d1 execute "$DB_NAME" --remote --file=starry-id/migrations/20261014_spouse_and_sso.sql --yes
 npx wrangler d1 execute "$DB_NAME" --remote --command "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE '_cf_%' ORDER BY name" --json > /tmp/starry-schema.json
 node starry-id/verify-schema.mjs /tmp/starry-schema.json
 
