@@ -9,7 +9,7 @@
     "verify:schema": "node starry-id/verify-schema.mjs"
   },
   "devDependencies": {
-    "@types/node": "^22.14.0",
+    "@types/node": "^26.6.5",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2",
     "wrangler": "^4.145.0"
