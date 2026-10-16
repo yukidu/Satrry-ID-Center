@@ -3,24 +3,32 @@ name: Validate Starry ID Center
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - '.github/dependabot.yml'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - '.github/dependabot.yml'
 
 permissions:
   contents: read
 
+concurrency:
+  group: starry-id-validate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  validate:
+  syntax-and-files:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
-      - name: TypeScript check
-        run: npm run typecheck
       - name: Shell syntax check
         run: bash -n starry-id/provision-and-audit.sh
       - name: JavaScript syntax check
@@ -35,3 +43,22 @@ jobs:
           test -f starry-id/migrations/20261014_profile_schema.sql
           test -f starry-id/migrations/20261014_notifications.sql
           test -f starry-id/migrations/20261014_spouse_and_sso.sql
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Cache npm downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: starry-id-npm-${{ runner.os }}-${{ hashFiles('package.json') }}
+          restore-keys: |
+            starry-id-npm-${{ runner.os }}-
+      - name: Install dependencies
+        run: npm install --prefer-offline --no-audit --no-fund
+      - name: TypeScript check
+        run: npm run typecheck
