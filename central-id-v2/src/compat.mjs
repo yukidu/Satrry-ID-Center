@@ -83,11 +83,12 @@ async function sessionOf(request,env) {
   return {id:row.legacy_user_id,name:row.display_name||"",membershipStatus:"legacy_unverified"};
 }
 const allowedHost = "id.hglobal1985.com";
+const previewHost = "hglobal-central-id-v2-preview.yukidu.workers.dev";
 export async function compatibility(request,env) {
   const url=new URL(request.url),path=url.pathname,method=request.method;
   if(!["/api/v1/compat/readiness","/api/google-sync","/api/session","/api/ecosystem/session","/api/v1/me","/api/logout"].includes(path) &&
      !/^\/api\/apps\/[a-z0-9-]+\/ticket$/.test(path) && path!=="/api/v1/compat/tickets/consume")return null;
-  if(url.hostname!==allowedHost)return respond(request,{error:"invalid_host"},404);
+  if(url.hostname!==allowedHost && url.hostname!==previewHost)return respond(request,{error:"invalid_host"},404);
   if(method==="OPTIONS"){
     if(!ORIGINS.has(request.headers.get("Origin")))return respond(request,{error:"origin_not_allowed"},403);
     return new Response(null,{status:204,headers:respond(request,{}).headers});
