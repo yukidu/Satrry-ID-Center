@@ -62,3 +62,17 @@
 安全限制：bridge 和 Echo ticket 高熵、極短有效期、一次性；不回傳私密手機、獎銜核准、電池；若 Echo app 狀態非 active，應返回 403。Browser redirect 設定 no-referrer、no-store，Bridge 必須做重播／到期／無 app 權限測試。
 
 **目前**：新程式碼與測試並不代表現有 Echo callback 已更新，Production 旗標預設仍關閉。沒有端到端實機驗證前仍不允許正式轉換。
+
+## 2026-10-23 急件追加：Live Legacy Auth 即時授權門檻
+
+靜態複製只保證核對當下，不足以保護「停權／刪除／App 權限撤銷」的即時性。過渡期間新版 Worker 以專用 `LEGACY_AUTH_DB` D1 binding **只讀**現行 `starry_id_db`，並於以下路徑強制重新驗證，不允許只信任一次性快照：
+
+1. `/api/google-sync` 經 Google JWT 正式驗章與新庫 provider-subject 對照後，再查舊正式 `identities(provider,providerSubject,userId,emailVerified)` 是否同一 userId 且 `users.status='active'`。
+2. `/api/session`、`/api/ecosystem/session`、`/api/v1/me` 的新版 Session 必須每次查舊正式 `users.status`。正式會員狀態改變，下一次 API 請求即拒絕。
+3. `/api/apps/echostars/ticket`、第一方 `/auth/echo/continue`、`/api/v1/compat/tickets/consume` 必須即時查舊 `users.status='active'` 及 `app_memberships.status='active'`；停權／App 取消時票據不可簽發或兌換。
+4. `LEGACY_AUTH_DB` 綁定缺失／查詢異常皆 fail closed，不能回退成只相信靜態快照。
+5. Preview 中 `LEGACY_AUTH_DB` 只指向**無真實會員資料**的隔離 Preview D1 測試表，正式 Worker 才連到原本舊 D1，且所有來源查詢都為 SELECT。
+
+**此為切換過渡期的暫時唯讀依賴，不是最終 Cloudflare 帳號分家架構**；未來新版中央身分及審核流程成為權威來源後才安全移除。
+
+**仍待**：Echo client callback 對新版 consume API 的實作、真正 Google OAuth Browser/Apple 規格、Echo 本地資料與權限停權端到端實機驗收，故在正式旗標仍關閉時 `echo_cutover_ready` 維持 false。

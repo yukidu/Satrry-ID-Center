@@ -72,6 +72,41 @@ function tokenFromRequest(request) {
   return /^[A-Za-z0-9_-]{40,80}$/.test(token)?token:"";
 }
 function dbReady(env){return env&&env.CENTRAL_DB&&typeof env.CENTRAL_DB.prepare==="function";}
+
+/**
+ * Interim cutover authority. Read-only against the ORIGINAL Starry identity D1:
+ * blocks deleted/suspended members and revoked Echo App access immediately.
+ * The migration copy is never trusted for revocation until central v2 owns auth.
+ */
+function legacyDbReady(env){return env?.LEGACY_AUTH_DB&&typeof env.LEGACY_AUTH_DB.prepare==="function";}
+async function liveLegacyMember(env,userId){
+  if(!legacyDbReady(env))return false;
+  try{
+    const u=await env.LEGACY_AUTH_DB.prepare("SELECT status FROM users WHERE id=? LIMIT 1").bind(userId).first();
+    return u?.status==="active";
+  }catch{return false;}
+}
+async function liveGoogleIdentity(env,subject,userId){
+  if(!legacyDbReady(env))return false;
+  try{
+    const row=await env.LEGACY_AUTH_DB.prepare(
+      "SELECT userId FROM identities WHERE provider='google' AND providerSubject=? AND emailVerified=1 LIMIT 1"
+    ).bind(subject).first();
+    return row?.userId===userId&&await liveLegacyMember(env,userId);
+  }catch{return false;}
+}
+async function liveEchoPermission(env,userId){
+  if(!legacyDbReady(env))return false;
+  try{
+    const u=await env.LEGACY_AUTH_DB.prepare("SELECT status FROM users WHERE id=? LIMIT 1").bind(userId).first();
+    if(u?.status!=="active")return false;
+    const m=await env.LEGACY_AUTH_DB.prepare(
+      "SELECT status FROM app_memberships WHERE userId=? AND appId='echostars' LIMIT 1"
+    ).bind(userId).first();
+    return m?.status==="active";
+  }catch{return false;}
+}
+
 async function sessionOf(request,env) {
   const token=tokenFromRequest(request);
   if(!token||!dbReady(env))return null;
@@ -79,7 +114,7 @@ async function sessionOf(request,env) {
   const row=await env.CENTRAL_DB.prepare(
     "SELECT s.legacy_user_id,u.display_name,u.account_status FROM compat_auth_sessions s JOIN compat_legacy_principals u ON u.legacy_user_id=s.legacy_user_id WHERE s.session_hash=? AND s.revoked_at_ms IS NULL AND s.expires_at_ms>? LIMIT 1"
   ).bind(hash,Date.now()).first();
-  if(!row||row.account_status!=="active")return null;
+  if(!row||row.account_status!=="active"||!(await liveLegacyMember(env,row.legacy_user_id)))return null;
   return {id:row.legacy_user_id,name:row.display_name||"",membershipStatus:"legacy_unverified"};
 }
 const allowedHost = "id.hglobal1985.com";
@@ -98,8 +133,11 @@ export async function compatibility(request,env) {
     const ready=dbReady(env);
     if(!ready)return respond(request,{status:"unavailable",storage:"not_bound",echo_cutover_ready:false},503);
     try{
+      if(!legacyDbReady(env))return respond(request,{status:"unavailable",storage:"connected",live_legacy_auth:"not_bound",echo_cutover_ready:false},503);
+      const legacySchema=await env.LEGACY_AUTH_DB.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name='users' LIMIT 1").first();
+      if(legacySchema?.name!=="users")return respond(request,{status:"unavailable",storage:"connected",live_legacy_auth:"schema_missing",echo_cutover_ready:false},503);
       const row=await env.CENTRAL_DB.prepare("SELECT COUNT(*) AS n FROM compat_migration_audit").first();
-      return respond(request,{status:"ok",phase:"compatibility_stage_1",storage:"connected",migration_audit_present:Number(row?.n||0)>0,google_jwt_verification_code_deployed:true,oauth_real_browser_tested:false,session_cookies_cross_site_tested:false,ticket_exchange_enabled:env?.ECHO_TICKETS_ENABLED==="true",echo_cutover_ready:false});
+      return respond(request,{status:"ok",phase:"compatibility_stage_1",storage:"connected",migration_audit_present:Number(row?.n||0)>0,live_legacy_auth:"read_only_live_checked",google_jwt_verification_code_deployed:true,oauth_real_browser_tested:false,session_cookies_cross_site_tested:false,ticket_exchange_enabled:env?.ECHO_TICKETS_ENABLED==="true",echo_cutover_ready:false});
     }catch{return respond(request,{status:"unavailable",storage:"schema_missing",echo_cutover_ready:false},503);}
   }
   if(path==="/api/session"||path==="/api/ecosystem/session"||path==="/api/v1/me"){
@@ -122,6 +160,7 @@ export async function compatibility(request,env) {
       "SELECT p.legacy_user_id,p.display_name,p.account_status FROM compat_google_subjects g JOIN compat_legacy_principals p ON p.legacy_user_id=g.legacy_user_id WHERE g.provider='google' AND g.provider_subject=? LIMIT 1"
     ).bind(claims.subject).first();
     if(!link||link.account_status!=="active")return respond(request,{error:"legacy_identity_not_claimable",registration_enabled:false},403);
+    if(!(await liveGoogleIdentity(env,claims.subject,link.legacy_user_id)))return respond(request,{error:"legacy_identity_revoked_or_unavailable",registration_enabled:false},403);
     const token=makeToken(),now=Date.now();
     const hash=await sha256hex(token);
     await env.CENTRAL_DB.prepare("INSERT INTO compat_auth_sessions(session_hash,legacy_user_id,origin_app,created_at_ms,expires_at_ms) VALUES(?,?,?,?,?)")
@@ -146,6 +185,7 @@ export async function compatibility(request,env) {
     if(!used)return respond(request,{error:"bridge_expired_or_used"},401);
     const principal=await env.CENTRAL_DB.prepare("SELECT p.account_status,a.legacy_status FROM compat_legacy_principals p JOIN compat_legacy_app_access a ON p.legacy_user_id=a.legacy_user_id AND a.app_id='echostars' WHERE p.legacy_user_id=? LIMIT 1").bind(used.legacy_user_id).first();
     if(!principal||principal.account_status!=="active"||principal.legacy_status!=="active")return respond(request,{error:"echo_access_not_active"},403);
+    if(!(await liveEchoPermission(env,used.legacy_user_id)))return respond(request,{error:"echo_live_access_revoked_or_unavailable"},403);
     const token=makeToken(),ticket=makeToken();
     await env.CENTRAL_DB.batch([
       env.CENTRAL_DB.prepare("INSERT INTO compat_auth_sessions(session_hash,legacy_user_id,origin_app,created_at_ms,expires_at_ms) VALUES(?,?,?,?,?)").bind(await sha256hex(token),used.legacy_user_id,"echostars",now,now+TTL),
@@ -170,6 +210,7 @@ export async function compatibility(request,env) {
     if(!identity)return respond(request,{authenticated:false,error:"unauthorized"},401);
     const access=await env.CENTRAL_DB.prepare("SELECT legacy_status FROM compat_legacy_app_access WHERE legacy_user_id=? AND app_id='echostars' LIMIT 1").bind(identity.id).first();
     if(!access||access.legacy_status!=="active")return respond(request,{authenticated:false,error:"echo_access_not_active"},403);
+    if(!(await liveEchoPermission(env,identity.id)))return respond(request,{authenticated:false,error:"echo_live_access_revoked_or_unavailable"},403);
     const now=Date.now(),code=makeToken(),codeHash=await sha256hex(code);
     await env.CENTRAL_DB.prepare("INSERT INTO compat_auth_tickets(code_hash,legacy_user_id,app_id,issued_at_ms,expires_at_ms) VALUES(?,?,?,?,?)").bind(codeHash,identity.id,"echostars",now,now+120000).run();
     return respond(request,{authenticated:true,code,redirect:"https://echo.starry.phd/auth/callback?code="+encodeURIComponent(code),expires_in:120,scope:"legacy_echo_only"},200);
@@ -189,6 +230,7 @@ export async function compatibility(request,env) {
     if(!row)return respond(request,{authenticated:false,error:"ticket_expired_or_used"},401);
     const principal=await env.CENTRAL_DB.prepare("SELECT p.legacy_user_id,p.display_name,p.account_status,a.legacy_status FROM compat_legacy_principals p JOIN compat_legacy_app_access a ON a.legacy_user_id=p.legacy_user_id AND a.app_id='echostars' WHERE p.legacy_user_id=? LIMIT 1").bind(row.legacy_user_id).first();
     if(!principal||principal.account_status!=="active"||principal.legacy_status!=="active")return respond(request,{authenticated:false,error:"echo_access_not_active"},403);
+    if(!(await liveEchoPermission(env,principal.legacy_user_id)))return respond(request,{authenticated:false,error:"echo_live_access_revoked_or_unavailable"},403);
     const echoLink=await env.CENTRAL_DB.prepare("SELECT echo_local_user_id FROM compat_echo_legacy_links WHERE legacy_user_id=? LIMIT 1").bind(principal.legacy_user_id).first();
     return respond(request,{authenticated:true,starryUserId:principal.legacy_user_id,echoLegacyUserId:echoLink?.echo_local_user_id||null,user:{id:principal.legacy_user_id,name:principal.display_name||""},membership_status:"legacy_unverified",scope:"legacy_echo_only"});
   }
