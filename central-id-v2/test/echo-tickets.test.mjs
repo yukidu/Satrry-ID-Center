@@ -23,6 +23,7 @@ function fixture(){
                 if(!row||row.used||row.expiresAt<=args[2])return null;
                 row.used=true;return {legacy_user_id:"fake-user"};
               }
+              if(sql.includes("FROM compat_echo_legacy_links"))return {echo_local_user_id:"echo-test-id"};
               if(sql.includes("FROM compat_legacy_principals p JOIN"))return {legacy_user_id:"fake-user",display_name:"測試用戶",account_status:"active",legacy_status:allowEcho?"active":"blocked"};
               if(sql.includes("COUNT(*) AS n FROM compat_migration_audit"))return {n:1};
               return null;
@@ -55,6 +56,7 @@ test("Echo ticket is short-lived, tied to app, and single-use",async()=>{
   assert.equal(accepted.status,200);
   const data=await accepted.json();
   assert.equal(data.starryUserId,"fake-user");
+  assert.equal(data.echoLegacyUserId,"echo-test-id");
   assert.equal(data.membership_status,"legacy_unverified");
   assert.equal((await consume()).status,401);
 });
