@@ -86,7 +86,7 @@ const allowedHost = "id.hglobal1985.com";
 export async function compatibility(request,env) {
   const url=new URL(request.url),path=url.pathname,method=request.method;
   if(!["/api/v1/compat/readiness","/api/google-sync","/api/session","/api/ecosystem/session","/api/v1/me","/api/logout"].includes(path) &&
-     !/^\/api\/apps\/[a-z0-9-]+\/ticket$/.test(path))return null;
+     !/^\/api\/apps\/[a-z0-9-]+\/ticket$/.test(path) && path!=="/api/v1/compat/tickets/consume")return null;
   if(url.hostname!==allowedHost)return respond(request,{error:"invalid_host"},404);
   if(method==="OPTIONS"){
     if(!ORIGINS.has(request.headers.get("Origin")))return respond(request,{error:"origin_not_allowed"},403);
@@ -98,7 +98,7 @@ export async function compatibility(request,env) {
     if(!ready)return respond(request,{status:"unavailable",storage:"not_bound",echo_cutover_ready:false},503);
     try{
       const row=await env.CENTRAL_DB.prepare("SELECT COUNT(*) AS n FROM compat_migration_audit").first();
-      return respond(request,{status:"ok",phase:"compatibility_stage_1",storage:"connected",migration_audit_present:Number(row?.n||0)>0,google_jwt_verification_code_deployed:true,oauth_real_browser_tested:false,session_cookies_cross_site_tested:false,ticket_exchange_enabled:false,echo_cutover_ready:false});
+      return respond(request,{status:"ok",phase:"compatibility_stage_1",storage:"connected",migration_audit_present:Number(row?.n||0)>0,google_jwt_verification_code_deployed:true,oauth_real_browser_tested:false,session_cookies_cross_site_tested:false,ticket_exchange_enabled:true,echo_cutover_ready:false});
     }catch{return respond(request,{status:"unavailable",storage:"schema_missing",echo_cutover_ready:false},503);}
   }
   if(path==="/api/session"||path==="/api/ecosystem/session"||path==="/api/v1/me"){
@@ -134,7 +134,35 @@ export async function compatibility(request,env) {
     if(token&&dbReady(env))await env.CENTRAL_DB.prepare("UPDATE compat_auth_sessions SET revoked_at_ms=? WHERE session_hash=?").bind(Date.now(),await sha256hex(token)).run();
     return respond(request,{success:true},200,{"Set-Cookie":COOKIE+"=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0"});
   }
-  if(/^\/api\/apps\/[a-z0-9-]+\/ticket$/.test(path))return respond(request,{error:"ticket_exchange_not_enabled",message:"Echo-Starry 一次性票據交換尚待跨服務驗收，現階段不可切換。"},503);
+  if(path==="/api/apps/echostars/ticket"){
+    if(method!=="POST")return respond(request,{error:"method_not_allowed"},405);
+    if(!ORIGINS.has(request.headers.get("Origin")))return respond(request,{error:"origin_not_allowed"},403);
+    if(!dbReady(env))return respond(request,{error:"service_unavailable"},503);
+    const identity=await sessionOf(request,env);
+    if(!identity)return respond(request,{authenticated:false,error:"unauthorized"},401);
+    const access=await env.CENTRAL_DB.prepare("SELECT legacy_status FROM compat_legacy_app_access WHERE legacy_user_id=? AND app_id='echostars' LIMIT 1").bind(identity.id).first();
+    if(!access||access.legacy_status!=="active")return respond(request,{authenticated:false,error:"echo_access_not_active"},403);
+    const now=Date.now(),code=makeToken(),codeHash=await sha256hex(code);
+    await env.CENTRAL_DB.prepare("INSERT INTO compat_auth_tickets(code_hash,legacy_user_id,app_id,issued_at_ms,expires_at_ms) VALUES(?,?,?,?,?)").bind(codeHash,identity.id,"echostars",now,now+120000).run();
+    return respond(request,{authenticated:true,code,redirect:"https://echo.starry.phd/auth/callback?code="+encodeURIComponent(code),expires_in:120,scope:"legacy_echo_only"},200);
+  }
+  if(path==="/api/v1/compat/tickets/consume"){
+    if(method!=="POST")return respond(request,{error:"method_not_allowed"},405);
+    const origin=request.headers.get("Origin");
+    if(origin && !ORIGINS.has(origin))return respond(request,{error:"origin_not_allowed"},403);
+    if(!dbReady(env))return respond(request,{error:"service_unavailable"},503);
+    if(!/^application\/json(?:;|$)/i.test(request.headers.get("Content-Type")||""))return respond(request,{error:"unsupported_content_type"},415);
+    if(Number(request.headers.get("Content-Length")||0)>1500)return respond(request,{error:"payload_too_large"},413);
+    let body;try{body=await request.json()}catch{return respond(request,{error:"invalid_json"},400);}
+    if(body?.appId!=="echostars"||typeof body?.code!=="string"||!/^[A-Za-z0-9_-]{42,48}$/.test(body.code))return respond(request,{error:"invalid_ticket"},401);
+    const hash=await sha256hex(body.code),now=Date.now();
+    const row=await env.CENTRAL_DB.prepare("UPDATE compat_auth_tickets SET consumed_at_ms=? WHERE code_hash=? AND app_id='echostars' AND consumed_at_ms IS NULL AND expires_at_ms>? RETURNING legacy_user_id").bind(now,hash,now).first();
+    if(!row)return respond(request,{authenticated:false,error:"ticket_expired_or_used"},401);
+    const principal=await env.CENTRAL_DB.prepare("SELECT p.legacy_user_id,p.display_name,p.account_status,a.legacy_status FROM compat_legacy_principals p JOIN compat_legacy_app_access a ON a.legacy_user_id=p.legacy_user_id AND a.app_id='echostars' WHERE p.legacy_user_id=? LIMIT 1").bind(row.legacy_user_id).first();
+    if(!principal||principal.account_status!=="active"||principal.legacy_status!=="active")return respond(request,{authenticated:false,error:"echo_access_not_active"},403);
+    return respond(request,{authenticated:true,starryUserId:principal.legacy_user_id,user:{id:principal.legacy_user_id,name:principal.display_name||""},membership_status:"legacy_unverified",scope:"legacy_echo_only"});
+  }
+  if(/^\/api\/apps\/[a-z0-9-]+\/ticket$/.test(path))return respond(request,{error:"app_not_enabled"},503);
   return null;
 }
 export const compatTest = {googleClaims,sha256hex,tokenFromRequest};
