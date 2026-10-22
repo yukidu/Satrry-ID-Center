@@ -20,23 +20,27 @@ function fixture(){
               if(sql.includes("FROM compat_legacy_app_access WHERE"))return allowEcho?{legacy_status:"active"}:null;
               if(sql.includes("UPDATE compat_auth_tickets SET consumed_at_ms")){
                 const row=tickets.get(args[1]);
-                if(!row||row.used||row.expiresAt<=args[2])return null;
+                const scope=sql.includes("echo_login_bridge")?"echo_login_bridge":"echostars";
+                if(!row||row.appId!==scope||row.used||row.expiresAt<=args[2])return null;
                 row.used=true;return {legacy_user_id:"fake-user"};
               }
+              if(sql.includes("SELECT p.account_status,a.legacy_status FROM compat_legacy_principals"))return {account_status:"active",legacy_status:allowEcho?"active":"blocked"};
               if(sql.includes("FROM compat_echo_legacy_links"))return {echo_local_user_id:"echo-test-id"};
               if(sql.includes("FROM compat_legacy_principals p JOIN"))return {legacy_user_id:"fake-user",display_name:"測試用戶",account_status:"active",legacy_status:allowEcho?"active":"blocked"};
               if(sql.includes("COUNT(*) AS n FROM compat_migration_audit"))return {n:1};
               return null;
             },
             async run(){
-              if(sql.includes("INSERT INTO compat_auth_tickets"))tickets.set(args[0],{used:false,expiresAt:args[4]});
+              if(sql.includes("INSERT INTO compat_auth_tickets"))tickets.set(args[0],{used:false,appId:args[2],expiresAt:args[4]});
+              if(sql.includes("INSERT INTO compat_auth_sessions"))sessions.set(args[0],{expiresAt:args[4]});
               return {success:true};
             }
           };
         },
         async first(){return {n:1};}
       };
-    }
+    },
+    async batch(statements){for(const statement of statements)await statement.run();return statements.map(()=>({success:true}));}
   };
   return {db,sessions,tickets,revoke:()=>{allowEcho=false}};
 }
@@ -79,4 +83,22 @@ test("ticket redemption refuses mismatched app ID and third-party browser origin
   assert.equal(x.status,401);
   const y=await app.fetch(req("/api/v1/compat/tickets/consume","POST",{code:"A".repeat(43),appId:"echostars"},{"Origin":"https://phishing.example"}),{CENTRAL_DB:env.db,ECHO_TICKETS_ENABLED:"true"});
   assert.equal(y.status,403);
+});
+
+test("browser top-level bridge sets first-party cookie and redirects via single-use Echo ticket",async()=>{
+  const env=fixture(),bridge="B".repeat(43),hash=await compatTest.sha256hex(bridge);
+  env.tickets.set(hash,{appId:"echo_login_bridge",used:false,expiresAt:Date.now()+120000});
+  const url="/auth/echo/continue?code="+bridge;
+  const res=await app.fetch(new Request(base+url),{CENTRAL_DB:env.db,ECHO_TICKETS_ENABLED:"true"});
+  assert.equal(res.status,303);
+  assert.match(res.headers.get("Set-Cookie")||"",/HttpOnly; Secure; SameSite=Lax/);
+  assert.match(res.headers.get("Location")||"",/^https:\/\/echo\.starry\.phd\/auth\/callback\?code=/);
+  const second=await app.fetch(new Request(base+url),{CENTRAL_DB:env.db,ECHO_TICKETS_ENABLED:"true"});
+  assert.equal(second.status,401);
+  const issuedCode=new URL(res.headers.get("Location")).searchParams.get("code");
+  const exchanged=await app.fetch(req("/api/v1/compat/tickets/consume","POST",{appId:"echostars",code:issuedCode}),{CENTRAL_DB:env.db,ECHO_TICKETS_ENABLED:"true"});
+  assert.equal(exchanged.status,200);
+  assert.equal((await exchanged.json()).echoLegacyUserId,"echo-test-id");
+  const prodGate=await app.fetch(new Request(base+url),{CENTRAL_DB:env.db});
+  assert.equal(prodGate.status,503);
 });
