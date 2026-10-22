@@ -42,20 +42,26 @@ function fixture(){
     },
     async batch(statements){for(const statement of statements)await statement.run();return statements.map(()=>({success:true}));}
   };
-  return {db,sessions,tickets,revoke:()=>{allowEcho=false}};
+  const legacyDb={prepare(sql){return {bind(){return {async first(){
+    if(sql.includes("FROM users WHERE id="))return {status:"active"};
+    if(sql.includes("FROM app_memberships WHERE"))return {status:allowEcho?"active":"blocked"};
+    if(sql.includes("FROM identities WHERE"))return {userId:"fake-user"};
+    return null;
+  }}}};}};
+  return {db,legacyDb,sessions,tickets,revoke:()=>{allowEcho=false}};
 }
 const req=(path,method,body,headers={})=>new Request(base+path,{method,headers:{"Origin":"https://echo.starry.phd","Content-Type":"application/json","Cookie":"central_id_v2_session="+token,...headers},body:body===undefined?undefined:JSON.stringify(body)});
 test("Echo ticket is short-lived, tied to app, and single-use",async()=>{
   const env=fixture();
   env.sessions.set(await compatTest.sha256hex(token),{expiresAt:Date.now()+500000});
-  const first=await app.fetch(req("/api/apps/echostars/ticket","POST",{}),{CENTRAL_DB:env.db,ECHO_TICKETS_ENABLED:"true"});
+  const first=await app.fetch(req("/api/apps/echostars/ticket","POST",{}),{CENTRAL_DB:env.db,LEGACY_AUTH_DB:env.legacyDb,ECHO_TICKETS_ENABLED:"true"});
   assert.equal(first.status,200);
   const issued=await first.json();
   assert.equal(issued.authenticated,true);
   assert.equal(issued.scope,"legacy_echo_only");
   assert.equal(issued.expires_in,120);
   assert.ok(issued.redirect.startsWith("https://echo.starry.phd/auth/callback?code="));
-  const consume=()=>app.fetch(req("/api/v1/compat/tickets/consume","POST",{code:issued.code,appId:"echostars"}),{CENTRAL_DB:env.db,ECHO_TICKETS_ENABLED:"true"});
+  const consume=()=>app.fetch(req("/api/v1/compat/tickets/consume","POST",{code:issued.code,appId:"echostars"}),{CENTRAL_DB:env.db,LEGACY_AUTH_DB:env.legacyDb,ECHO_TICKETS_ENABLED:"true"});
   const accepted=await consume();
   assert.equal(accepted.status,200);
   const data=await accepted.json();
@@ -67,21 +73,21 @@ test("Echo ticket is short-lived, tied to app, and single-use",async()=>{
 test("expired ticket and denied app access cannot issue reusable privileges",async()=>{
   const env=fixture();
   env.sessions.set(await compatTest.sha256hex(token),{expiresAt:Date.now()+500000});
-  let res=await app.fetch(req("/api/apps/echostars/ticket","POST",{}),{CENTRAL_DB:env.db,ECHO_TICKETS_ENABLED:"true"});
+  let res=await app.fetch(req("/api/apps/echostars/ticket","POST",{}),{CENTRAL_DB:env.db,LEGACY_AUTH_DB:env.legacyDb,ECHO_TICKETS_ENABLED:"true"});
   const data=await res.json();
   const hash=await compatTest.sha256hex(data.code);
   env.tickets.get(hash).expiresAt=Date.now()-1;
-  res=await app.fetch(req("/api/v1/compat/tickets/consume","POST",{code:data.code,appId:"echostars"}),{CENTRAL_DB:env.db,ECHO_TICKETS_ENABLED:"true"});
+  res=await app.fetch(req("/api/v1/compat/tickets/consume","POST",{code:data.code,appId:"echostars"}),{CENTRAL_DB:env.db,LEGACY_AUTH_DB:env.legacyDb,ECHO_TICKETS_ENABLED:"true"});
   assert.equal(res.status,401);
   env.revoke();
-  res=await app.fetch(req("/api/apps/echostars/ticket","POST",{}),{CENTRAL_DB:env.db,ECHO_TICKETS_ENABLED:"true"});
+  res=await app.fetch(req("/api/apps/echostars/ticket","POST",{}),{CENTRAL_DB:env.db,LEGACY_AUTH_DB:env.legacyDb,ECHO_TICKETS_ENABLED:"true"});
   assert.equal(res.status,403);
 });
 test("ticket redemption refuses mismatched app ID and third-party browser origin",async()=>{
   const env=fixture();
-  const x=await app.fetch(req("/api/v1/compat/tickets/consume","POST",{code:"A".repeat(43),appId:"gostarry"}),{CENTRAL_DB:env.db,ECHO_TICKETS_ENABLED:"true"});
+  const x=await app.fetch(req("/api/v1/compat/tickets/consume","POST",{code:"A".repeat(43),appId:"gostarry"}),{CENTRAL_DB:env.db,LEGACY_AUTH_DB:env.legacyDb,ECHO_TICKETS_ENABLED:"true"});
   assert.equal(x.status,401);
-  const y=await app.fetch(req("/api/v1/compat/tickets/consume","POST",{code:"A".repeat(43),appId:"echostars"},{"Origin":"https://phishing.example"}),{CENTRAL_DB:env.db,ECHO_TICKETS_ENABLED:"true"});
+  const y=await app.fetch(req("/api/v1/compat/tickets/consume","POST",{code:"A".repeat(43),appId:"echostars"},{"Origin":"https://phishing.example"}),{CENTRAL_DB:env.db,LEGACY_AUTH_DB:env.legacyDb,ECHO_TICKETS_ENABLED:"true"});
   assert.equal(y.status,403);
 });
 
@@ -89,16 +95,31 @@ test("browser top-level bridge sets first-party cookie and redirects via single-
   const env=fixture(),bridge="B".repeat(43),hash=await compatTest.sha256hex(bridge);
   env.tickets.set(hash,{appId:"echo_login_bridge",used:false,expiresAt:Date.now()+120000});
   const url="/auth/echo/continue?code="+bridge;
-  const res=await app.fetch(new Request(base+url),{CENTRAL_DB:env.db,ECHO_TICKETS_ENABLED:"true"});
+  const res=await app.fetch(new Request(base+url),{CENTRAL_DB:env.db,LEGACY_AUTH_DB:env.legacyDb,ECHO_TICKETS_ENABLED:"true"});
   assert.equal(res.status,303);
   assert.match(res.headers.get("Set-Cookie")||"",/HttpOnly; Secure; SameSite=Lax/);
   assert.match(res.headers.get("Location")||"",/^https:\/\/echo\.starry\.phd\/auth\/callback\?code=/);
-  const second=await app.fetch(new Request(base+url),{CENTRAL_DB:env.db,ECHO_TICKETS_ENABLED:"true"});
+  const second=await app.fetch(new Request(base+url),{CENTRAL_DB:env.db,LEGACY_AUTH_DB:env.legacyDb,ECHO_TICKETS_ENABLED:"true"});
   assert.equal(second.status,401);
   const issuedCode=new URL(res.headers.get("Location")).searchParams.get("code");
-  const exchanged=await app.fetch(req("/api/v1/compat/tickets/consume","POST",{appId:"echostars",code:issuedCode}),{CENTRAL_DB:env.db,ECHO_TICKETS_ENABLED:"true"});
+  const exchanged=await app.fetch(req("/api/v1/compat/tickets/consume","POST",{appId:"echostars",code:issuedCode}),{CENTRAL_DB:env.db,LEGACY_AUTH_DB:env.legacyDb,ECHO_TICKETS_ENABLED:"true"});
   assert.equal(exchanged.status,200);
   assert.equal((await exchanged.json()).echoLegacyUserId,"echo-test-id");
-  const prodGate=await app.fetch(new Request(base+url),{CENTRAL_DB:env.db});
+  const prodGate=await app.fetch(new Request(base+url),{CENTRAL_DB:env.db,LEGACY_AUTH_DB:env.legacyDb});
   assert.equal(prodGate.status,503);
+});
+
+test("legacy live membership revocation immediately blocks existing new sessions and unspent tickets",async()=>{
+ const env=fixture();env.sessions.set(await compatTest.sha256hex(token),{expiresAt:Date.now()+500000});
+ const config={CENTRAL_DB:env.db,LEGACY_AUTH_DB:env.legacyDb,ECHO_TICKETS_ENABLED:"true"};
+ const ticketRes=await app.fetch(req("/api/apps/echostars/ticket","POST",{}),config);
+ assert.equal(ticketRes.status,200);const {code}=await ticketRes.json();
+ env.revoke();
+ const revoked=await app.fetch(req("/api/v1/compat/tickets/consume","POST",{appId:"echostars",code}),config);
+ assert.equal(revoked.status,403);
+ assert.equal((await revoked.json()).error,"echo_live_access_revoked_or_unavailable");
+ const other=await app.fetch(req("/api/apps/echostars/ticket","POST",{}),config);
+ assert.equal(other.status,403);
+ const missingSource=await app.fetch(req("/api/session","GET"),{CENTRAL_DB:env.db,ECHO_TICKETS_ENABLED:"true"});
+ assert.equal((await missingSource.json()).authenticated,false);
 });
