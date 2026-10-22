@@ -49,3 +49,16 @@
 - `ECHO_TICKETS_ENABLED` 預設關閉。正式 Worker 在未驗證 Echo 端兌換、權限同步、OAuth 網域與瀏覽器 Cookies 前，簽發／兌換票據均回傳 `503 ticket_exchange_not_ready`。
 - 獨立 Preview Worker 將此旗標啟用，只使用空白測試 D1，實際測試票據邏輯及匿名拒絕，**絕不把正式會員資料提供給 Preview**。
 - `GET /api/v1/compat/readiness` 的 `ticket_exchange_enabled` 表示旗標狀態，而 `echo_cutover_ready:false` 仍不變。嚴禁以單一健康檢查成功代替完整 E2E 切換驗收。
+
+## Echo 跨網域登入橋接（新階段）
+
+因 `id.hglobal1985.com` 和 `echo.starry.phd` 不同站點，瀏覽器第三方 Cookie 不可靠。新增**第一方導轉橋接**，僅在測試旗標 `ECHO_TICKETS_ENABLED=true` 時開啟：
+
+1. Echo 原站已獲 Google GIS ID token 的瀏覽器，以 `Origin: https://echo.starry.phd` 且 `credentials: include` POST `https://id.hglobal1985.com/api/google-sync`，JSON `{"credential":"<Google ID token>","appId":"echostars"}`。
+2. 經 Google JWKS 與原有 subject 精準驗證後回 `success:true`、`membership_status:"legacy_unverified"`，以及只在旗標開啟時的 `continueUrl`（2 分鐘內有效的一次性橋接碼，不是永久登入 URL）。
+3. 瀏覽器**頂層導轉**至 `continueUrl`，由新 ID 網域的 `GET /auth/echo/continue?code=...` 原子兌換橋接碼，重新查驗會員及 Echo App 使用資格；新建 HttpOnly、Secure、SameSite=Lax 第一方 Cookie 與 120 秒的 Echo ticket。
+4. HTTP 303 跳轉 `https://echo.starry.phd/auth/callback?code=...`；**Echo 必須修改其 callback**，改為向新 ID 的 `POST /api/v1/compat/tickets/consume` 提交 `{"appId":"echostars","code":"..."}`，取得 `starryUserId` 與（若存在）`echoLegacyUserId`，再建立 Echo 原業務站本地登入狀態。舊 callback 仍消耗舊 D1 ticket，現在不能完成新流程。
+
+安全限制：bridge 和 Echo ticket 高熵、極短有效期、一次性；不回傳私密手機、獎銜核准、電池；若 Echo app 狀態非 active，應返回 403。Browser redirect 設定 no-referrer、no-store，Bridge 必須做重播／到期／無 app 權限測試。
+
+**目前**：新程式碼與測試並不代表現有 Echo callback 已更新，Production 旗標預設仍關閉。沒有端到端實機驗證前仍不允許正式轉換。
