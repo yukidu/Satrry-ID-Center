@@ -1,0 +1,26 @@
+name: Central ID v2 safe public shell
+
+on:
+  push:
+    paths:
+      - "central-id-v2/**"
+      - ".github/workflows/central-id-v2.yml"
+  pull_request:
+    paths:
+      - "central-id-v2/**"
+      - ".github/workflows/central-id-v2.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  public-shell-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Unit and security gate
+        run: node --test central-id-v2/test/index.test.mjs
