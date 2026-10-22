@@ -161,7 +161,8 @@ export async function compatibility(request,env) {
     if(!row)return respond(request,{authenticated:false,error:"ticket_expired_or_used"},401);
     const principal=await env.CENTRAL_DB.prepare("SELECT p.legacy_user_id,p.display_name,p.account_status,a.legacy_status FROM compat_legacy_principals p JOIN compat_legacy_app_access a ON a.legacy_user_id=p.legacy_user_id AND a.app_id='echostars' WHERE p.legacy_user_id=? LIMIT 1").bind(row.legacy_user_id).first();
     if(!principal||principal.account_status!=="active"||principal.legacy_status!=="active")return respond(request,{authenticated:false,error:"echo_access_not_active"},403);
-    return respond(request,{authenticated:true,starryUserId:principal.legacy_user_id,user:{id:principal.legacy_user_id,name:principal.display_name||""},membership_status:"legacy_unverified",scope:"legacy_echo_only"});
+    const echoLink=await env.CENTRAL_DB.prepare("SELECT echo_local_user_id FROM compat_echo_legacy_links WHERE legacy_user_id=? LIMIT 1").bind(principal.legacy_user_id).first();
+    return respond(request,{authenticated:true,starryUserId:principal.legacy_user_id,echoLegacyUserId:echoLink?.echo_local_user_id||null,user:{id:principal.legacy_user_id,name:principal.display_name||""},membership_status:"legacy_unverified",scope:"legacy_echo_only"});
   }
   if(/^\/api\/apps\/[a-z0-9-]+\/ticket$/.test(path))return respond(request,{error:"app_not_enabled"},503);
   return null;
