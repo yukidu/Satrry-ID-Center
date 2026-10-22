@@ -33,4 +33,7 @@ jobs:
           test "$STATUS" = "403"
           curl -fSs --max-time 25 "$URL/api/v1/status" -o /tmp/site-status.json
           node -e 'const d=require("/tmp/site-status.json");if(d.member_login_enabled!==false||d.compatibility_auth_stage!=="identity_verification_code_deployed_not_accepted_for_cutover")throw Error("public status misrepresents readiness")'
+          STATUS=$(curl -sS -o /tmp/unknown-bridge.json -w "%{http_code}" --max-time 25 "$URL/auth/echo/continue?code=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB")
+          test "$STATUS" = "401"
+          node -e 'if(require("/tmp/unknown-bridge.json").error!=="bridge_expired_or_used")process.exit(1)'
           echo "PASS: preview D1 connected, no anonymous data, one-time tickets fail closed, no cutover claim"

@@ -87,7 +87,7 @@ const previewHost = "hglobal-central-id-v2-preview.yukidu.workers.dev";
 export async function compatibility(request,env) {
   const url=new URL(request.url),path=url.pathname,method=request.method;
   if(!["/api/v1/compat/readiness","/api/google-sync","/api/session","/api/ecosystem/session","/api/v1/me","/api/logout"].includes(path) &&
-     !/^\/api\/apps\/[a-z0-9-]+\/ticket$/.test(path) && path!=="/api/v1/compat/tickets/consume")return null;
+     !/^\/api\/apps\/[a-z0-9-]+\/ticket$/.test(path) && path!=="/api/v1/compat/tickets/consume" && path!=="/auth/echo/continue")return null;
   if(url.hostname!==allowedHost && url.hostname!==previewHost)return respond(request,{error:"invalid_host"},404);
   if(method==="OPTIONS"){
     if(!ORIGINS.has(request.headers.get("Origin")))return respond(request,{error:"origin_not_allowed"},403);
@@ -126,7 +126,33 @@ export async function compatibility(request,env) {
     const hash=await sha256hex(token);
     await env.CENTRAL_DB.prepare("INSERT INTO compat_auth_sessions(session_hash,legacy_user_id,origin_app,created_at_ms,expires_at_ms) VALUES(?,?,?,?,?)")
       .bind(hash,link.legacy_user_id,payload.appId,now,now+TTL).run();
-    return respond(request,{success:true,authenticated:true,user:{id:link.legacy_user_id,name:link.display_name||""},membership_status:"legacy_unverified",approved:false,echo_cutover_ready:false},200,{"Set-Cookie":COOKIE+"="+token+"; Path=/; HttpOnly; Secure; SameSite=None; Max-Age="+Math.floor(TTL/1000)});
+    let continueUrl=null;
+    if(env?.ECHO_TICKETS_ENABLED==="true" && payload.appId==="echostars"){
+      const bridge=makeToken();
+      await env.CENTRAL_DB.prepare("INSERT INTO compat_auth_tickets(code_hash,legacy_user_id,app_id,issued_at_ms,expires_at_ms) VALUES(?,?,?,?,?)")
+        .bind(await sha256hex(bridge),link.legacy_user_id,"echo_login_bridge",now,now+120000).run();
+      continueUrl=new URL("/auth/echo/continue?code="+encodeURIComponent(bridge),request.url).toString();
+    }
+    return respond(request,{success:true,authenticated:true,user:{id:link.legacy_user_id,name:link.display_name||""},membership_status:"legacy_unverified",approved:false,echo_cutover_ready:false,continueUrl},200,{"Set-Cookie":COOKIE+"="+token+"; Path=/; HttpOnly; Secure; SameSite=None; Max-Age="+Math.floor(TTL/1000)});
+  }
+  if(path==="/auth/echo/continue"){
+    if(env?.ECHO_TICKETS_ENABLED!=="true")return respond(request,{error:"ticket_exchange_not_ready"},503);
+    if(method!=="GET")return respond(request,{error:"method_not_allowed"},405);
+    if(!dbReady(env))return respond(request,{error:"service_unavailable"},503);
+    const code=url.searchParams.get("code");
+    if(!code||!/^[A-Za-z0-9_-]{42,48}$/.test(code))return respond(request,{error:"invalid_bridge"},401);
+    const now=Date.now(),hash=await sha256hex(code);
+    const used=await env.CENTRAL_DB.prepare("UPDATE compat_auth_tickets SET consumed_at_ms=? WHERE code_hash=? AND app_id='echo_login_bridge' AND consumed_at_ms IS NULL AND expires_at_ms>? RETURNING legacy_user_id").bind(now,hash,now).first();
+    if(!used)return respond(request,{error:"bridge_expired_or_used"},401);
+    const principal=await env.CENTRAL_DB.prepare("SELECT p.account_status,a.legacy_status FROM compat_legacy_principals p JOIN compat_legacy_app_access a ON p.legacy_user_id=a.legacy_user_id AND a.app_id='echostars' WHERE p.legacy_user_id=? LIMIT 1").bind(used.legacy_user_id).first();
+    if(!principal||principal.account_status!=="active"||principal.legacy_status!=="active")return respond(request,{error:"echo_access_not_active"},403);
+    const token=makeToken(),ticket=makeToken();
+    await env.CENTRAL_DB.batch([
+      env.CENTRAL_DB.prepare("INSERT INTO compat_auth_sessions(session_hash,legacy_user_id,origin_app,created_at_ms,expires_at_ms) VALUES(?,?,?,?,?)").bind(await sha256hex(token),used.legacy_user_id,"echostars",now,now+TTL),
+      env.CENTRAL_DB.prepare("INSERT INTO compat_auth_tickets(code_hash,legacy_user_id,app_id,issued_at_ms,expires_at_ms) VALUES(?,?,?,?,?)").bind(await sha256hex(ticket),used.legacy_user_id,"echostars",now,now+120000)
+    ]);
+    const headers=new Headers({"Location":"https://echo.starry.phd/auth/callback?code="+encodeURIComponent(ticket),"Set-Cookie":COOKIE+"="+token+"; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age="+Math.floor(TTL/1000),"Cache-Control":"no-store","Referrer-Policy":"no-referrer","X-Robots-Tag":"noindex,nofollow,noarchive","X-Content-Type-Options":"nosniff"});
+    return new Response(null,{status:303,headers});
   }
   if(path==="/api/logout"){
     if(method!=="POST")return respond(request,{error:"method_not_allowed"},405);
