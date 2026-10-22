@@ -23,7 +23,7 @@ test("untrusted origins and unsafe ticket issuance fail closed",async()=>{
   assert.equal(res.headers.get("Access-Control-Allow-Origin"),null);
   res=await app.fetch(request("/api/apps/echostars/ticket",{method:"POST",headers:{"Origin":"https://echo.starry.phd"}}));
   assert.equal(res.status,503);
-  assert.equal((await res.json()).error,"service_unavailable");
+  assert.equal((await res.json()).error,"ticket_exchange_not_ready");
   res=await app.fetch(request("/api/v1/compat/readiness"));
   assert.equal(res.status,503);
   assert.equal((await res.json()).echo_cutover_ready,false);
