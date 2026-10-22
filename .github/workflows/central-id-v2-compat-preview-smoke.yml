@@ -1,0 +1,36 @@
+name: Central ID v2 Echo compatibility preview smoke
+
+on:
+  pull_request:
+    paths:
+      - "central-id-v2/**"
+      - ".github/workflows/central-id-v2-compat-preview-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check real Cloudflare isolated preview (GET and rejected mutations)
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://hglobal-central-id-v2-preview.yukidu.workers.dev"
+          curl -fSs --retry 3 --retry-all-errors --retry-delay 4 --max-time 25 "$URL/api/v1/compat/readiness" -o /tmp/readiness.json
+          node -e 'const d=require("/tmp/readiness.json");if(d.status!=="ok"||d.storage!=="connected"||d.migration_audit_present!==false||d.echo_cutover_ready!==false||d.ticket_exchange_enabled!==true)throw Error("invalid readiness "+JSON.stringify(d))'
+          curl -fSs --max-time 25 "$URL/api/session" -o /tmp/session.json
+          node -e 'const d=require("/tmp/session.json");if(d.authenticated!==false)throw Error("anonymous session must be false")'
+          STATUS=$(curl -sS -o /tmp/me.json -w "%{http_code}" --max-time 25 "$URL/api/v1/me")
+          test "$STATUS" = "401"
+          STATUS=$(curl -sS -o /tmp/no-ticket.json -w "%{http_code}" --max-time 25 -X POST -H "Origin: https://echo.starry.phd" "$URL/api/apps/echostars/ticket")
+          test "$STATUS" = "401"
+          STATUS=$(curl -sS -o /tmp/invalid-ticket.json -w "%{http_code}" --max-time 25 -X POST -H "Content-Type: application/json" -d '{"appId":"echostars","code":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}' "$URL/api/v1/compat/tickets/consume")
+          test "$STATUS" = "401"
+          STATUS=$(curl -sS -o /tmp/invalid-origin.json -w "%{http_code}" --max-time 25 -X POST -H "Content-Type: application/json" -H "Origin: https://attacker.example" -d '{"credential":"not-a-token","appId":"echostars"}' "$URL/api/google-sync")
+          test "$STATUS" = "403"
+          curl -fSs --max-time 25 "$URL/api/v1/status" -o /tmp/site-status.json
+          node -e 'const d=require("/tmp/site-status.json");if(d.member_login_enabled!==false||d.compatibility_auth_stage!=="identity_verification_code_deployed_not_accepted_for_cutover")throw Error("public status misrepresents readiness")'
+          echo "PASS: preview D1 connected, no anonymous data, one-time tickets fail closed, no cutover claim"

@@ -28,11 +28,14 @@ test("homepage contains honest unavailable notice and headers",async()=>{
   assert.match(res.headers.get("Content-Security-Policy"),/form-action 'none'/);
 });
 test("private data and writes fail closed",async()=>{
-  for(const path of ["/api/v1/me","/api/v1/public/directory","/api/v1/public/complaints"]){
+  for(const path of ["/api/v1/public/directory","/api/v1/public/complaints"]){
     const res=await req(path);
     assert.equal(res.status,503);
     assert.equal((await res.json()).error,"not_enabled");
   }
+  const me=await req("/api/v1/me");
+  assert.equal(me.status,401);
+  assert.equal((await me.json()).authenticated,false);
   const post=await req("/api/v1/public/complaints","POST");
   assert.equal(post.status,503);
 });

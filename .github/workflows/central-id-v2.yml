@@ -23,4 +23,4 @@ jobs:
         with:
           node-version: "22"
       - name: Unit and security gate
-        run: node --test central-id-v2/test/index.test.mjs
+        run: node --test central-id-v2/test/*.test.mjs
