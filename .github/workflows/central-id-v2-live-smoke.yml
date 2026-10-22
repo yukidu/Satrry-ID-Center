@@ -1,0 +1,25 @@
+name: Central ID v2 live endpoint smoke
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/central-id-v2-live-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify live custom domain and health
+        run: |
+          set -euo pipefail
+          curl -fS --retry 4 --retry-all-errors --retry-delay 5 --max-time 25             -D /tmp/headers.txt -o /tmp/home.html https://id.hglobal1985.com/
+          grep -q '目前開放的是新版官方資訊頁' /tmp/home.html
+          grep -qi '^x-robots-tag: noindex' /tmp/headers.txt
+          curl -fS --retry 4 --retry-all-errors --retry-delay 5 --max-time 25             https://id.hglobal1985.com/healthz -o /tmp/status.json
+          node -e 'const d=require("/tmp/status.json"); if(d.status!=="ok"||d.phase!=="public-information"||d.member_login_enabled!==false) process.exit(1)'
+          echo 'PASS: production home, headers, safe feature gates and health'
