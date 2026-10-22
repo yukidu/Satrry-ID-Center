@@ -26,7 +26,7 @@ jobs:
             https://id.hglobal1985.com/api/v1/status -o /tmp/migration-status.json
           node -e 'const d=require("/tmp/migration-status.json"); if(d.legacy_snapshot?.state!=="copied-and-verified" || d.legacy_snapshot?.tables!==61 || d.legacy_snapshot?.rows!==4849 || !d.legacy_snapshot?.isolated || d.legacy_linked!==false || d.member_login_enabled!==false) process.exit(1)'
           curl -fSs --max-time 25 https://id.hglobal1985.com/api/v1/compat/readiness -o /tmp/compat-ready.json
-          node -e 'const d=require("/tmp/compat-ready.json"); if(d.status!=="ok"||d.storage!=="connected"||!d.migration_audit_present||d.ticket_exchange_enabled||d.echo_cutover_ready)process.exit(1)'
+          node -e 'const d=require("/tmp/compat-ready.json"); if(d.status!=="ok"||d.storage!=="connected"||!d.migration_audit_present||d.ticket_exchange_enabled||d.echo_cutover_ready||d.live_legacy_auth!=="read_only_live_checked")process.exit(1)'
           curl -fSs --max-time 25 https://id.hglobal1985.com/api/session -o /tmp/anonymous-session.json
           node -e 'if(require("/tmp/anonymous-session.json").authenticated!==false)process.exit(1)'
           STATUS=$(curl -sS --max-time 25 -w "%{http_code}" -o /tmp/ticket-rejected.json -X POST -H "Origin: https://echo.starry.phd" https://id.hglobal1985.com/api/apps/echostars/ticket)
