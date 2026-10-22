@@ -7,7 +7,7 @@ if(!globalThis.crypto)globalThis.crypto=webcrypto;
 const token="z".repeat(43), base="https://id.hglobal1985.com";
 function fixture(){
   const sessions=new Map(),tickets=new Map();
-  let allowEcho=true;
+  let allowEcho=true,liveEcho=true;
   const db={
     prepare(sql){
       return {
@@ -44,11 +44,11 @@ function fixture(){
   };
   const legacyDb={prepare(sql){return {bind(){return {async first(){
     if(sql.includes("FROM users WHERE id="))return {status:"active"};
-    if(sql.includes("FROM app_memberships WHERE"))return {status:allowEcho?"active":"blocked"};
+    if(sql.includes("FROM app_memberships WHERE"))return {status:liveEcho?"active":"blocked"};
     if(sql.includes("FROM identities WHERE"))return {userId:"fake-user"};
     return null;
   }}}};}};
-  return {db,legacyDb,sessions,tickets,revoke:()=>{allowEcho=false}};
+  return {db,legacyDb,sessions,tickets,revoke:()=>{allowEcho=false},revokeLive:()=>{liveEcho=false}};
 }
 const req=(path,method,body,headers={})=>new Request(base+path,{method,headers:{"Origin":"https://echo.starry.phd","Content-Type":"application/json","Cookie":"central_id_v2_session="+token,...headers},body:body===undefined?undefined:JSON.stringify(body)});
 test("Echo ticket is short-lived, tied to app, and single-use",async()=>{
@@ -114,7 +114,7 @@ test("legacy live membership revocation immediately blocks existing new sessions
  const config={CENTRAL_DB:env.db,LEGACY_AUTH_DB:env.legacyDb,ECHO_TICKETS_ENABLED:"true"};
  const ticketRes=await app.fetch(req("/api/apps/echostars/ticket","POST",{}),config);
  assert.equal(ticketRes.status,200);const {code}=await ticketRes.json();
- env.revoke();
+ env.revokeLive();
  const revoked=await app.fetch(req("/api/v1/compat/tickets/consume","POST",{appId:"echostars",code}),config);
  assert.equal(revoked.status,403);
  assert.equal((await revoked.json()).error,"echo_live_access_revoked_or_unavailable");
