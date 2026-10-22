@@ -24,3 +24,5 @@ jobs:
           node-version: "22"
       - name: Unit and security gate
         run: node --test central-id-v2/test/*.test.mjs
+      - name: iOS two-developer account D1 partition tests
+        run: python3 central-id-v2/test/ios_catalog_schema_test.py
