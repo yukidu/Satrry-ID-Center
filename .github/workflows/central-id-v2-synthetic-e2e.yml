@@ -1,0 +1,40 @@
+name: Central ID v2 synthetic Echo SSO preview E2E
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/central-id-v2-synthetic-e2e.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Real network test with synthetic Preview-only account
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://hglobal-central-id-v2-preview.yukidu.workers.dev"
+          COOKIE="central_id_v2_session=kvhaExvMNgZe-4649POl7qdrKvu67R6fA2d3QCREN9U"
+          curl -fSs -H "Cookie: $COOKIE" "$URL/api/session" -o /tmp/synthetic-session.json
+          node -e 'const d=require("/tmp/synthetic-session.json");if(!d.authenticated||d.user?.id!=="ci-v2-synthetic-echo-integration-only")process.exit(1)'
+          curl -fSs -X POST -H "Origin: https://echo.starry.phd" -H "Cookie: $COOKIE" "$URL/api/apps/echostars/ticket" -o /tmp/synthetic-ticket.json
+          node -e 'const d=require("/tmp/synthetic-ticket.json");if(!d.authenticated||d.expires_in!==120||!d.code||!d.redirect?.startsWith("https://echo.starry.phd/auth/callback?code="))process.exit(1)'
+          CODE=$(node -p 'require("/tmp/synthetic-ticket.json").code')
+          curl -fSs -X POST -H "Content-Type: application/json" -d "{\"appId\":\"echostars\",\"code\":\"$CODE\"}" "$URL/api/v1/compat/tickets/consume" -o /tmp/synthetic-consumed.json
+          node -e 'const d=require("/tmp/synthetic-consumed.json");if(!d.authenticated||d.starryUserId!=="ci-v2-synthetic-echo-integration-only"||d.echoLegacyUserId!=="echo-synthetic-local-id")process.exit(1)'
+          STATUS=$(curl -sS -X POST -H "Content-Type: application/json" -d "{\"appId\":\"echostars\",\"code\":\"$CODE\"}" -w "%{http_code}" -o /tmp/synthetic-replay.json "$URL/api/v1/compat/tickets/consume")
+          test "$STATUS" = "401"
+          STATUS=$(curl -sS --max-time 20 -D /tmp/synthetic-bridge-headers.txt -o /dev/null -w "%{http_code}" "$URL/auth/echo/continue?code=-mO-TcHmFvoemFuvagDmKzEqSTxXTG_pA34v-yb3irE")
+          test "$STATUS" = "303"
+          grep -qi '^set-cookie:.*HttpOnly.*Secure.*SameSite=Lax' /tmp/synthetic-bridge-headers.txt
+          BRIDGE_CODE=$(node -e 'const h=require("fs").readFileSync("/tmp/synthetic-bridge-headers.txt","utf8");const m=h.match(/^location:\s*(\S+)/im);if(!m)process.exit(1);const u=new URL(m[1]);if(u.origin!=="https://echo.starry.phd"||u.pathname!=="/auth/callback")process.exit(1);process.stdout.write(u.searchParams.get("code")||"")')
+          test -n "$BRIDGE_CODE"
+          curl -fSs -X POST -H "Content-Type: application/json" -d "{\"appId\":\"echostars\",\"code\":\"$BRIDGE_CODE\"}" "$URL/api/v1/compat/tickets/consume" -o /tmp/synthetic-bridge-exchange.json
+          node -e 'const d=require("/tmp/synthetic-bridge-exchange.json");if(!d.authenticated||d.echoLegacyUserId!=="echo-synthetic-local-id")process.exit(1)'
+          STATUS=$(curl -sS -o /tmp/bridge-replay.json -w "%{http_code}" "$URL/auth/echo/continue?code=-mO-TcHmFvoemFuvagDmKzEqSTxXTG_pA34v-yb3irE")
+          test "$STATUS" = "401"
+          echo "PASS: Preview-only synthetic session, Echo SSO ticket, replay reject and first-party redirect"
