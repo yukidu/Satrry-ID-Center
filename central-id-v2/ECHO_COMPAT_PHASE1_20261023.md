@@ -4,7 +4,7 @@
 
 - 正式新版 D1：`central_id_v2`，其原有 33 表正式候選 Schema 尚未整體遷入。
 - 新增的相容表：`compat_legacy_principals`、`compat_google_subjects`、`compat_legacy_app_access`、`compat_auth_sessions`、`compat_auth_tickets`、`compat_migration_audit`。均與正式 v0.2 Schema 使用不同命名，避免把候選欄位誤當正式中央審核資料。
-- 僅從隔離副本 `central_id_legacy_snapshot_20261023` 匯入 74 筆 legacy principal、72 筆 **emailVerified 的 Google subject**、108 筆 App 成員紀錄。**未匯入舊 Session、舊 Token、舊 App 秘鑰、Starry 電池或舊名片對外可見旗標。**
+- 僅從隔離副本 `central_id_legacy_snapshot_20261023` 匯入 74 筆 legacy principal、72 筆 **emailVerified 的 Google subject**、108 筆 App 成員紀錄，以及 70 筆 Echo 原本地會員 ID 精準對照。**未匯入舊 Session、舊 Token、舊 App 秘鑰、Starry 電池或舊名片對外可見旗標。**
 - `PRAGMA foreign_key_check` 無違規，`PRAGMA quick_check` 回傳 `ok`。
 - 本次只匯入截至 2026-10-23 的一次性對照，**不自動同步原站新增／刪除／停權事件**。正式切換前必須增量重核與帳號撤銷事件一致性方案。
 
@@ -21,7 +21,7 @@
 | GET `/api/v1/me` | 沒登入 401，登入只回最小身分資訊；不返回獎銜核准 |
 | POST `/api/logout` | 撤銷新版專用 Session，並清除新版 Cookie |
 | POST `/api/apps/echostars/ticket` | 有效新版 Session 且舊 Echo App 授權 active 時簽發 120 秒一次性 code，其他 app 不開放 |
-| POST `/api/v1/compat/tickets/consume` | 對照 appId=echostars，原子消耗單次票據並重新檢查 App 授權與會員可用狀態；重複／過期拒絕 |
+| POST `/api/v1/compat/tickets/consume` | 對照 appId=echostars，原子消耗單次票據並重新檢查 App 授權與會員可用狀態；回傳 `starryUserId`、`echoLegacyUserId`（若原本有映射），重複／過期拒絕 |
 
 嚴禁以舊 `starry_id_session` 代替新的 `central_id_v2_session`；完整 API 尚未可供其他 AI 切換使用。
 
