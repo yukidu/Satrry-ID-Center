@@ -20,7 +20,8 @@
 | GET `/api/ecosystem/session` | 同上，額外要求允許的 Origin |
 | GET `/api/v1/me` | 沒登入 401，登入只回最小身分資訊；不返回獎銜核准 |
 | POST `/api/logout` | 撤銷新版專用 Session，並清除新版 Cookie |
-| POST `/api/apps/:appId/ticket` | **一律 503**，因 Echo 應用端 ticket 交換和完整授權驗收尚未完成 |
+| POST `/api/apps/echostars/ticket` | 有效新版 Session 且舊 Echo App 授權 active 時簽發 120 秒一次性 code，其他 app 不開放 |
+| POST `/api/v1/compat/tickets/consume` | 對照 appId=echostars，原子消耗單次票據並重新檢查 App 授權與會員可用狀態；重複／過期拒絕 |
 
 嚴禁以舊 `starry_id_session` 代替新的 `central_id_v2_session`；完整 API 尚未可供其他 AI 切換使用。
 
