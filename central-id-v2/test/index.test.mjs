@@ -12,6 +12,11 @@ test("status is transparent about disabled sensitive services",async()=>{
   assert.equal(data.directory_enabled,false);
   assert.equal(data.complaints_enabled,false);
   assert.equal(data.legacy_linked,false);
+  assert.equal(data.legacy_snapshot.state,"copied-and-verified");
+  assert.equal(data.legacy_snapshot.isolated,true);
+  assert.equal(data.legacy_snapshot.tables,61);
+  assert.equal(data.legacy_snapshot.rows,4849);
+  assert.equal(data.legacy_snapshot.production_login_reuse,false);
 });
 test("homepage contains honest unavailable notice and headers",async()=>{
   const res=await req("/");
