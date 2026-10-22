@@ -22,4 +22,7 @@ jobs:
           grep -qi '^x-robots-tag: noindex' /tmp/headers.txt
           curl -fS --retry 4 --retry-all-errors --retry-delay 5 --max-time 25             https://id.hglobal1985.com/healthz -o /tmp/status.json
           node -e 'const d=require("/tmp/status.json"); if(d.status!=="ok"||d.phase!=="public-information"||d.member_login_enabled!==false) process.exit(1)'
-          echo 'PASS: production home, headers, safe feature gates and health'
+          curl -fS --retry 4 --retry-all-errors --retry-delay 5 --max-time 25 \
+            https://id.hglobal1985.com/api/v1/status -o /tmp/migration-status.json
+          node -e 'const d=require("/tmp/migration-status.json"); if(d.legacy_snapshot?.state!=="copied-and-verified" || d.legacy_snapshot?.tables!==61 || d.legacy_snapshot?.rows!==4849 || !d.legacy_snapshot?.isolated || d.legacy_linked!==false || d.member_login_enabled!==false) process.exit(1)'
+          echo 'PASS: production home, D1 legacy metadata, isolation, headers and health'
