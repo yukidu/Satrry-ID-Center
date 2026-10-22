@@ -44,14 +44,14 @@ const req=(path,method,body,headers={})=>new Request(base+path,{method,headers:{
 test("Echo ticket is short-lived, tied to app, and single-use",async()=>{
   const env=fixture();
   env.sessions.set(await compatTest.sha256hex(token),{expiresAt:Date.now()+500000});
-  const first=await app.fetch(req("/api/apps/echostars/ticket","POST",{}),{CENTRAL_DB:env.db});
+  const first=await app.fetch(req("/api/apps/echostars/ticket","POST",{}),{CENTRAL_DB:env.db,ECHO_TICKETS_ENABLED:"true"});
   assert.equal(first.status,200);
   const issued=await first.json();
   assert.equal(issued.authenticated,true);
   assert.equal(issued.scope,"legacy_echo_only");
   assert.equal(issued.expires_in,120);
   assert.ok(issued.redirect.startsWith("https://echo.starry.phd/auth/callback?code="));
-  const consume=()=>app.fetch(req("/api/v1/compat/tickets/consume","POST",{code:issued.code,appId:"echostars"}),{CENTRAL_DB:env.db});
+  const consume=()=>app.fetch(req("/api/v1/compat/tickets/consume","POST",{code:issued.code,appId:"echostars"}),{CENTRAL_DB:env.db,ECHO_TICKETS_ENABLED:"true"});
   const accepted=await consume();
   assert.equal(accepted.status,200);
   const data=await accepted.json();
@@ -63,20 +63,20 @@ test("Echo ticket is short-lived, tied to app, and single-use",async()=>{
 test("expired ticket and denied app access cannot issue reusable privileges",async()=>{
   const env=fixture();
   env.sessions.set(await compatTest.sha256hex(token),{expiresAt:Date.now()+500000});
-  let res=await app.fetch(req("/api/apps/echostars/ticket","POST",{}),{CENTRAL_DB:env.db});
+  let res=await app.fetch(req("/api/apps/echostars/ticket","POST",{}),{CENTRAL_DB:env.db,ECHO_TICKETS_ENABLED:"true"});
   const data=await res.json();
   const hash=await compatTest.sha256hex(data.code);
   env.tickets.get(hash).expiresAt=Date.now()-1;
-  res=await app.fetch(req("/api/v1/compat/tickets/consume","POST",{code:data.code,appId:"echostars"}),{CENTRAL_DB:env.db});
+  res=await app.fetch(req("/api/v1/compat/tickets/consume","POST",{code:data.code,appId:"echostars"}),{CENTRAL_DB:env.db,ECHO_TICKETS_ENABLED:"true"});
   assert.equal(res.status,401);
   env.revoke();
-  res=await app.fetch(req("/api/apps/echostars/ticket","POST",{}),{CENTRAL_DB:env.db});
+  res=await app.fetch(req("/api/apps/echostars/ticket","POST",{}),{CENTRAL_DB:env.db,ECHO_TICKETS_ENABLED:"true"});
   assert.equal(res.status,403);
 });
 test("ticket redemption refuses mismatched app ID and third-party browser origin",async()=>{
   const env=fixture();
-  const x=await app.fetch(req("/api/v1/compat/tickets/consume","POST",{code:"A".repeat(43),appId:"gostarry"}),{CENTRAL_DB:env.db});
+  const x=await app.fetch(req("/api/v1/compat/tickets/consume","POST",{code:"A".repeat(43),appId:"gostarry"}),{CENTRAL_DB:env.db,ECHO_TICKETS_ENABLED:"true"});
   assert.equal(x.status,401);
-  const y=await app.fetch(req("/api/v1/compat/tickets/consume","POST",{code:"A".repeat(43),appId:"echostars"},{"Origin":"https://phishing.example"}),{CENTRAL_DB:env.db});
+  const y=await app.fetch(req("/api/v1/compat/tickets/consume","POST",{code:"A".repeat(43),appId:"echostars"},{"Origin":"https://phishing.example"}),{CENTRAL_DB:env.db,ECHO_TICKETS_ENABLED:"true"});
   assert.equal(y.status,403);
 });
