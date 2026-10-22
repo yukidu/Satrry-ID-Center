@@ -44,3 +44,8 @@
 7. 隱私、安全、網域、跨 App Session、手機及公開名錄全部驗收。
 
 目前：**不得通知另一個 AI 更改 Echo-Starry API。**
+
+## 生產安全旗標（2026-10-23 更新）
+- `ECHO_TICKETS_ENABLED` 預設關閉。正式 Worker 在未驗證 Echo 端兌換、權限同步、OAuth 網域與瀏覽器 Cookies 前，簽發／兌換票據均回傳 `503 ticket_exchange_not_ready`。
+- 獨立 Preview Worker 將此旗標啟用，只使用空白測試 D1，實際測試票據邏輯及匿名拒絕，**絕不把正式會員資料提供給 Preview**。
+- `GET /api/v1/compat/readiness` 的 `ticket_exchange_enabled` 表示旗標狀態，而 `echo_cutover_ready:false` 仍不變。嚴禁以單一健康檢查成功代替完整 E2E 切換驗收。
