@@ -44,7 +44,7 @@ async function googleClaims(jwt, fetcher=fetch, expectedAud=CLIENT_ID) {
   if(header.alg!=="RS256"||typeof header.kid!=="string"||header.kid.length>200)throw Error("unsupported_signature");
   const now=Math.floor(Date.now()/1000);
   if(!["https://accounts.google.com","accounts.google.com"].includes(claim.iss) ||
-      claim.aud!==expectedAud || !Number.isInteger(claim.exp) || claim.exp<=now ||
+      claim.aud!==expectedAud || (claim.azp!==undefined && claim.azp!==expectedAud) || !Number.isInteger(claim.exp) || claim.exp<=now || claim.exp>now+7200 ||
       !Number.isInteger(claim.iat) || claim.iat>now+60 ||
       typeof claim.sub!=="string" || claim.sub.length<4 || claim.sub.length>255 ||
       claim.email_verified!==true)throw Error("claims_invalid");
@@ -99,7 +99,7 @@ export async function compatibility(request,env) {
     if(!ready)return respond(request,{status:"unavailable",storage:"not_bound",echo_cutover_ready:false},503);
     try{
       const row=await env.CENTRAL_DB.prepare("SELECT COUNT(*) AS n FROM compat_migration_audit").first();
-      return respond(request,{status:"ok",phase:"compatibility_stage_1",storage:"connected",migration_audit_present:Number(row?.n||0)>0,google_jwt_verification_code_deployed:true,oauth_real_browser_tested:false,session_cookies_cross_site_tested:false,ticket_exchange_enabled:true,echo_cutover_ready:false});
+      return respond(request,{status:"ok",phase:"compatibility_stage_1",storage:"connected",migration_audit_present:Number(row?.n||0)>0,google_jwt_verification_code_deployed:true,oauth_real_browser_tested:false,session_cookies_cross_site_tested:false,ticket_exchange_enabled:env?.ECHO_TICKETS_ENABLED==="true",echo_cutover_ready:false});
     }catch{return respond(request,{status:"unavailable",storage:"schema_missing",echo_cutover_ready:false},503);}
   }
   if(path==="/api/session"||path==="/api/ecosystem/session"||path==="/api/v1/me"){
@@ -115,7 +115,7 @@ export async function compatibility(request,env) {
     if(!dbReady(env))return respond(request,{error:"service_unavailable"},503);
     if(!/^application\/json(?:;|$)/i.test(request.headers.get("Content-Type")||""))return respond(request,{error:"unsupported_content_type"},415);
     if(Number(request.headers.get("Content-Length")||"0")>12000)return respond(request,{error:"payload_too_large"},413);
-    let payload;try{payload=await request.json()}catch{return respond(request,{error:"invalid_json"},400);}
+    let payload;try{const raw=await request.text();if(raw.length>12000)return respond(request,{error:"payload_too_large"},413);payload=JSON.parse(raw);}catch{return respond(request,{error:"invalid_json"},400);}
     if(!APPS.has(payload?.appId))return respond(request,{error:"invalid_app"},400);
     let claims;try{claims=await googleClaims(payload?.credential)}catch{return respond(request,{error:"credential_invalid"},401);}
     const link=await env.CENTRAL_DB.prepare(
@@ -136,6 +136,7 @@ export async function compatibility(request,env) {
     return respond(request,{success:true},200,{"Set-Cookie":COOKIE+"=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0"});
   }
   if(path==="/api/apps/echostars/ticket"){
+    if(env?.ECHO_TICKETS_ENABLED!=="true")return respond(request,{error:"ticket_exchange_not_ready"},503);
     if(method!=="POST")return respond(request,{error:"method_not_allowed"},405);
     if(!ORIGINS.has(request.headers.get("Origin")))return respond(request,{error:"origin_not_allowed"},403);
     if(!dbReady(env))return respond(request,{error:"service_unavailable"},503);
@@ -148,13 +149,14 @@ export async function compatibility(request,env) {
     return respond(request,{authenticated:true,code,redirect:"https://echo.starry.phd/auth/callback?code="+encodeURIComponent(code),expires_in:120,scope:"legacy_echo_only"},200);
   }
   if(path==="/api/v1/compat/tickets/consume"){
+    if(env?.ECHO_TICKETS_ENABLED!=="true")return respond(request,{error:"ticket_exchange_not_ready"},503);
     if(method!=="POST")return respond(request,{error:"method_not_allowed"},405);
     const origin=request.headers.get("Origin");
     if(origin && !ORIGINS.has(origin))return respond(request,{error:"origin_not_allowed"},403);
     if(!dbReady(env))return respond(request,{error:"service_unavailable"},503);
     if(!/^application\/json(?:;|$)/i.test(request.headers.get("Content-Type")||""))return respond(request,{error:"unsupported_content_type"},415);
     if(Number(request.headers.get("Content-Length")||0)>1500)return respond(request,{error:"payload_too_large"},413);
-    let body;try{body=await request.json()}catch{return respond(request,{error:"invalid_json"},400);}
+    let body;try{const raw=await request.text();if(raw.length>1500)return respond(request,{error:"payload_too_large"},413);body=JSON.parse(raw);}catch{return respond(request,{error:"invalid_json"},400);}
     if(body?.appId!=="echostars"||typeof body?.code!=="string"||!/^[A-Za-z0-9_-]{42,48}$/.test(body.code))return respond(request,{error:"invalid_ticket"},401);
     const hash=await sha256hex(body.code),now=Date.now();
     const row=await env.CENTRAL_DB.prepare("UPDATE compat_auth_tickets SET consumed_at_ms=? WHERE code_hash=? AND app_id='echostars' AND consumed_at_ms IS NULL AND expires_at_ms>? RETURNING legacy_user_id").bind(now,hash,now).first();
