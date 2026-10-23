@@ -1,0 +1,124 @@
+{
+  "date": "2026-10-23",
+  "environment": "Codex local gcloud, not ordinary ChatGPT",
+  "project": {
+    "createTime": "2026-10-23T07:21:16.632Z",
+    "lifecycleState": "ACTIVE",
+    "name": "H-Global1985",
+    "projectId": "h-global1985",
+    "projectNumber": "791614645185"
+  },
+  "iam_bindings": [
+    {
+      "members": [
+        "user:hglobal1985@gmail.com"
+      ],
+      "role": "roles/owner"
+    }
+  ],
+  "enabled_apis": [
+    {
+      "name": "analyticshub.googleapis.com",
+      "state": "ENABLED"
+    },
+    {
+      "name": "apptopology.googleapis.com",
+      "state": "ENABLED"
+    },
+    {
+      "name": "bigquery.googleapis.com",
+      "state": "ENABLED"
+    },
+    {
+      "name": "bigqueryconnection.googleapis.com",
+      "state": "ENABLED"
+    },
+    {
+      "name": "bigquerydatapolicy.googleapis.com",
+      "state": "ENABLED"
+    },
+    {
+      "name": "bigquerydatatransfer.googleapis.com",
+      "state": "ENABLED"
+    },
+    {
+      "name": "bigquerymigration.googleapis.com",
+      "state": "ENABLED"
+    },
+    {
+      "name": "bigqueryreservation.googleapis.com",
+      "state": "ENABLED"
+    },
+    {
+      "name": "bigquerystorage.googleapis.com",
+      "state": "ENABLED"
+    },
+    {
+      "name": "cloudapis.googleapis.com",
+      "state": "ENABLED"
+    },
+    {
+      "name": "cloudtrace.googleapis.com",
+      "state": "ENABLED"
+    },
+    {
+      "name": "dataform.googleapis.com",
+      "state": "ENABLED"
+    },
+    {
+      "name": "dataplex.googleapis.com",
+      "state": "ENABLED"
+    },
+    {
+      "name": "datastore.googleapis.com",
+      "state": "ENABLED"
+    },
+    {
+      "name": "logging.googleapis.com",
+      "state": "ENABLED"
+    },
+    {
+      "name": "monitoring.googleapis.com",
+      "state": "ENABLED"
+    },
+    {
+      "name": "servicemanagement.googleapis.com",
+      "state": "ENABLED"
+    },
+    {
+      "name": "serviceusage.googleapis.com",
+      "state": "ENABLED"
+    },
+    {
+      "name": "sql-component.googleapis.com",
+      "state": "ENABLED"
+    },
+    {
+      "name": "storage-api.googleapis.com",
+      "state": "ENABLED"
+    },
+    {
+      "name": "storage-component.googleapis.com",
+      "state": "ENABLED"
+    },
+    {
+      "name": "storage.googleapis.com",
+      "state": "ENABLED"
+    },
+    {
+      "name": "telemetry.googleapis.com",
+      "state": "ENABLED"
+    }
+  ],
+  "mutations_performed": [],
+  "ordinary_chatgpt_e2e_verified": false,
+  "billing": {
+    "projectId": "h-global1985",
+    "billingEnabled": false,
+    "verified": true
+  },
+  "effective_permissions_test": {
+    "verified": false,
+    "reason": "automatic approval review usage limit; command not executed"
+  }
+}

@@ -11,7 +11,7 @@
 - GitHub 基準 commit：`749d75af7f62fea0a0c8088ef8d786264a716774`。
 - Cloudflare 已實際讀取 `hglobal-central-id-v2` settings（HTTP 200）：`CENTRAL_DB`、`LEGACY_AUTH_DB`、`ECHO_TICKETS_ENABLED`；尚無 `HGLOBAL_GOOGLE_CLIENT_ID`。
 - Gmail profile 實際回傳另一帳號 `yukidu@gmail.com`，不能當作 H-Global 已連接。本次未讀取郵件內容。
-- Google IAM、已啟用 API、配額及專案帳務尚待官方 CLI 登入完成後盤點。未啟用任何 API、付費帳務或資源。
+- Google CLI 已成功登入指定帳號；專案、IAM 與已啟用 API 已唯讀盤點，詳見 inventory.json。帳號既有 roles/owner，本次未新增任何 IAM 授權。帳務唯讀查詢回傳 billingEnabled=false；配額仍待查詢。未啟用任何 API、付費帳務或資源。
 
 ## OAuth 設定目標與限制
 
@@ -25,7 +25,7 @@ Google 官方 OAuth 最佳實務明確要求 Console 建立及修改一般 OAuth
 
 授權中心將使用另外的管理用途 OAuth client，與會員登入 client 分開。管理 callback 需等實際部署路由及 OAuth 流程完成才登記，不能猜測。
 
-政策頁、網域所有權、同意畫面發布狀態及 Google 驗證尚未核實；不建立虛假政策或宣稱驗證完成。需要正式隱私政策、資料保存/刪除方式、服務條款、聯絡資訊與網域驗證證據。敏感／受限 scopes 應逐項判斷審查需求。
+本次自動 HTTP 查詢 `/login`、`/privacy`、`/terms` 與 `/api/v1/compat/readiness` 均回傳 403，無法據此判定頁面不存在或登入已壞；需瀏覽器驗證。政策頁、網域所有權、同意畫面發布狀態及 Google 驗證尚未核實；不建立虛假政策或宣稱驗證完成。需要正式隱私政策、資料保存/刪除方式、服務條款、聯絡資訊與網域驗證證據。敏感／受限 scopes 應逐項判斷審查需求。
 
 ## 登入隔離變更
 
@@ -33,7 +33,7 @@ Google 官方 OAuth 最佳實務明確要求 Console 建立及修改一般 OAuth
 
 為避免尚未設定新 Client ID 就破壞現站，未設定 binding 暫時保留舊值；明確設定空字串、null 或錯誤格式則拒絕登入。正式切換驗收必須確認 binding 為新 ID，不能把 fallback 當作完成隔離。
 
-25 項本機 Node 測試與 iOS 資料分隔測試通過。測試 RSA 金鑰及 token 都是單元測試 fixture，不能作為真實 Google 登入證據。正式驗收還需新帳號登入、既有會員 user_id 穩定、Echo 舊登入可用、跨 audience 拒絕、nonce 重放拒絕、登出與撤銷生效。
+25 項本機 Node 測試與 iOS 資料分隔測試通過。GitHub PR #31 的程式 commit `bc3cac35032cbb1c098e589bbb26313e35ff5f7d` 已通過全部 7 個回報檢查，含 typecheck、語法、公開頁面測試及 CodeQL（修改程式無新增警示）。測試 RSA 金鑰及 token 都是單元測試 fixture，不能作為真實 Google 登入證據。正式驗收還需新帳號登入、既有會員 user_id 穩定、Echo 舊登入可用、跨 audience 拒絕、nonce 重放拒絕、登出與撤銷生效。
 
 ## Google API 決策清單
 
@@ -98,7 +98,7 @@ Cloud IAM 與使用者 Google 資料授權分開：WIF 不會自動授權 Gmail 
 
 | 服務 | H-Global 已連接 | 可讀取 | 可寫入 | 額外授權 | Google 驗證 | 平台限制 | 一般對話實測 |
 |---|---|---|---|---|---|---|---|
-| Cloud | 未確認 | 設計 API | 白名單待實作 | IAM/管理身分 | 依 OAuth 模式 | 自訂 MCP 需安裝與允許 | 未完成 |
+| Cloud | CLI 已連接，ChatGPT 未連接 | CLI 專案/IAM/API 已實測 | 白名單待實作 | IAM/管理身分 | 依 OAuth 模式 | 自訂 MCP 需安裝與允許 | 未完成 |
 | Auth Platform | 未確認 | Console | Console | 專案權限 | 應用審查待核實 | 無受支援一般 client 管理 API | 未完成 |
 | YouTube | 否 | 頻道/影片 API | 上傳/metadata/播放清單/縮圖待實作 | 使用者 OAuth | 依 scope 與上傳政策 | 大檔上傳管線與頻道資格 | 未完成 |
 | Drive | 未確認 | 本次有連接工具 | 本次有連接工具 | 指定帳號 consent | 自訂 app 依 scope | 檔案格式/大小及分享確認 | 未完成 |
@@ -120,7 +120,7 @@ Cloud IAM 與使用者 Google 資料授權分開：WIF 不會自動授權 Gmail 
 
 ## 尚未完成與上線門檻
 
-- Google CLI 登入回呼、IAM/API/配額完整盤點。
+- Google CLI 登入與 IAM/API 盤點已完成；配額完整盤點待完成。
 - 新 Google OAuth client 與政策／網域驗證。
 - 管理介面實作、部署、專用身分核准、機密儲存與稽核持久化。
 - Cloudflare Preview 新 client 真實登入與 Echo 回歸。
@@ -139,3 +139,9 @@ Cloud IAM 與使用者 Google 資料授權分開：WIF 不會自動授權 Gmail 
 - https://developers.openai.com/plugins/deploy/connect-chatgpt
 - https://developers.google.com/youtube/data/reference/rest/v3/videos/insert
 - https://developers.google.com/youtube/data/guides/authentication
+
+## 本輪執行限制
+
+進一步唯讀 testIamPermissions 與配額 API 查詢未執行：自動核准審查因使用額度限制無法完成。這不是判定查詢不安全；需待審查恢復再重試，不改用其他工具繞過審查。已完成的 IAM policy 讀取仍有效，但不能聲稱逐項有效權限測試完成。
+
+目前可開啟 Console 分頁，但工具沒有讀取或操作該已登入分頁的能力。需要帳號持有人完成官方 Console 的 OAuth client 設定並提供公開 Client ID，不能把開啟頁面當作設定完成。
