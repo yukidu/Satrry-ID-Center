@@ -5,7 +5,7 @@ import {loginPage,dashboardPage,settingsPage,portalResponse,scriptResponse} from
 import {portalClientCode} from "./portal-script.mjs";
 const APP_ORIGIN="https://id.hglobal1985.com";
 const PREVIEW_ORIGIN="https://hglobal-central-id-v2-preview.yukidu.workers.dev";
-// H-Global web portal has a separate Google OAuth client; Echo compatibility keeps the Starry client.
+// H-Global web portal has an independent Google OAuth client; internal compatibility retains separate settings.
 const CLIENT_ID="791614645185-vbaqqbnr463r1vi4ga41uh73s7eg0gv5.apps.googleusercontent.com";
 const SESSION_COOKIE="central_id_portal";
 const NONCE_COOKIE="central_login_nonce";
