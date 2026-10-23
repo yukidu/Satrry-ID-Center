@@ -2,6 +2,7 @@
 // Production is fail-closed when OAuth origin / D1 / old account authority are unavailable.
 import {compatTest} from "./compat.mjs";
 import {isValidHglobalCenter} from "./centers.mjs";
+import {centerClientCode} from "./center-client.mjs";
 import {loginPage,dashboardPage,settingsPage,portalResponse,scriptResponse} from "./portal.mjs";
 import {portalClientCode} from "./portal-script.mjs";
 const APP_ORIGIN="https://id.hglobal1985.com";
@@ -163,8 +164,12 @@ async function updateHglobalCenter(request,env){
 
 export async function portalRoute(request,env){
  const u=new URL(request.url),path=u.pathname,method=request.method;
- if(!["/login","/dashboard","/me/settings","/portal.js","/api/v1/portal/profile","/api/v1/portal/center","/api/v1/portal/challenge","/api/v1/portal/google-login","/api/v1/portal/logout","/api/v1/portal/me"].includes(path))return null;
+ if(!["/login","/dashboard","/me/settings","/portal.js","/center.js","/api/v1/portal/profile","/api/v1/portal/center","/api/v1/portal/challenge","/api/v1/portal/google-login","/api/v1/portal/logout","/api/v1/portal/me"].includes(path))return null;
  if(![APP_ORIGIN,PREVIEW_ORIGIN].includes(u.origin))return err("invalid_host",404);
+ if(path==="/center.js"){
+  if(method!=="GET")return err("method_not_allowed",405);
+  return scriptResponse(centerClientCode);
+ }
  if(path==="/portal.js"){
   if(method!=="GET")return err("method_not_allowed",405);
   return scriptResponse(portalClientCode);
