@@ -24,5 +24,7 @@ jobs:
           node-version: "22"
       - name: Unit and security gate
         run: node --test central-id-v2/test/*.test.mjs
+      - name: H-Global center D1 migration and revocation tests
+        run: python3 central-id-v2/test/center_migration_schema_test.py
       - name: iOS two-developer account D1 partition tests
         run: python3 central-id-v2/test/ios_catalog_schema_test.py
