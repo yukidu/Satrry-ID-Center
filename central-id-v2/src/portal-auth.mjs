@@ -1,7 +1,7 @@
 // Central ID browser authentication. This is separate from the Echo compatibility API.
 // Production is fail-closed when OAuth origin / D1 / old account authority are unavailable.
 import {compatTest} from "./compat.mjs";
-import {loginPage,dashboardPage,portalResponse,scriptResponse} from "./portal.mjs";
+import {loginPage,dashboardPage,settingsPage,portalResponse,scriptResponse} from "./portal.mjs";
 import {portalClientCode} from "./portal-script.mjs";
 const APP_ORIGIN="https://id.hglobal1985.com";
 const PREVIEW_ORIGIN="https://hglobal-central-id-v2-preview.yukidu.workers.dev";
@@ -38,12 +38,12 @@ async function portalUser(request,env){
  const raw=cookie(request,SESSION_COOKIE);
  if(!RE.test(raw))return null;
  const row=await env.CENTRAL_DB.prepare(
-  "SELECT u.user_id,u.auth_version,u.membership_status,u.suspended_at_ms,u.deleted_at_ms,s.issued_auth_version,p.display_name,p.contact_email FROM auth_sessions s JOIN identity_users u ON u.user_id=s.user_id JOIN member_profiles p ON p.user_id=u.user_id WHERE s.session_id_hash=? AND s.brand_scope='central' AND s.revoked_at_ms IS NULL AND s.expires_at_ms>? LIMIT 1"
+  "SELECT u.user_id,u.auth_version,u.membership_status,u.suspended_at_ms,u.deleted_at_ms,s.issued_auth_version,p.display_name,p.contact_email,p.mobile_e164,p.membership_system,p.center_code,p.amway_number,p.location_country,p.location_region,p.location_city,p.birth_date_iso,p.motto,p.record_version,e.display_name AS center_name FROM auth_sessions s JOIN identity_users u ON u.user_id=s.user_id JOIN member_profiles p ON p.user_id=u.user_id LEFT JOIN education_centers e ON e.center_code=p.center_code WHERE s.session_id_hash=? AND s.brand_scope='central' AND s.revoked_at_ms IS NULL AND s.expires_at_ms>? LIMIT 1"
  ).bind(await hex(raw),Date.now()).first();
  if(!row||row.deleted_at_ms!==null||row.suspended_at_ms!==null||row.auth_version!==row.issued_auth_version)return null;
  const legacy=await env.CENTRAL_DB.prepare("SELECT legacy_user_id FROM compat_legacy_principals WHERE legacy_user_id=? LIMIT 1").bind(row.user_id).first();
  if(legacy && !(await legacyValid(env,row.user_id)))return null;
- return {id:row.user_id,displayName:row.display_name,contactEmail:row.contact_email,membership_status:row.membership_status};
+ return {id:row.user_id,displayName:row.display_name,contactEmail:row.contact_email,mobileE164:row.mobile_e164,membershipSystem:row.membership_system,centerCode:row.center_code,centerName:row.center_name,amwayNumber:row.amway_number,locationCountry:row.location_country,locationRegion:row.location_region,locationCity:row.location_city,birthDateIso:row.birth_date_iso,motto:row.motto,recordVersion:row.record_version,membership_status:row.membership_status};
 }
 async function googleLogin(request,env){
  if(!originOk(request))return err("origin_not_allowed",403);
@@ -97,9 +97,43 @@ async function googleLogin(request,env){
  ).bind(await hex(token),userId,now,now+SESSION_TTL,u.auth_version).run();
  return success({authenticated:true,user:{id:userId},membership_status:u.membership_status,central_approved:u.membership_status==="approved"},{'Set-Cookie':cookieFlag(SESSION_COOKIE,token,Math.floor(SESSION_TTL/1000))});
 }
+
+// First-stage self-edit: only non-privileged personal text fields; changes never grant membership/rank/role.
+// All input is validated server-side and guarded by an authenticated session and record-version CAS.
+const PROFILE_FIELDS={
+ display_name:{max:50,required:true},
+ contact_email:{max:254},
+ location_country:{max:90},
+ location_region:{max:90},
+ location_city:{max:90},
+ motto:{max:200}
+};
+async function updateOwnProfile(request,env){
+ if(!originOk(request))return err("origin_not_allowed",403);
+ if(!/^application\/json(?:;|$)/i.test(request.headers.get("Content-Type")||""))return err("unsupported_content_type",415);
+ if(!identityDb(env))return err("database_unavailable",503);
+ const current=await portalUser(request,env);
+ if(!current)return err("unauthorized",401);
+ let payload;
+ try{const raw=await request.text();if(raw.length>1600)return err("too_large",413);payload=JSON.parse(raw);}catch{return err("invalid_json");}
+ if(!payload||typeof payload!=="object"||Array.isArray(payload)||
+    !Number.isSafeInteger(payload.version)||payload.version<1||
+    typeof payload.field!=="string"||!Object.hasOwn(PROFILE_FIELDS,payload.field)||
+    typeof payload.value!=="string"||Object.keys(payload).some(k=>!["field","value","version"].includes(k)))return err("invalid_profile_update");
+ const rule=PROFILE_FIELDS[payload.field],str=payload.value.trim();
+ if(str.length>rule.max||(rule.required&&!str))return err("invalid_profile_value");
+ if(payload.field==="contact_email"&&str&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(str))return err("invalid_email");
+ // Field is an allowlisted SQL identifier from PROFILE_FIELDS, never arbitrary client input.
+ const updated=await env.CENTRAL_DB.prepare(
+  "UPDATE member_profiles SET "+payload.field+"=?,updated_at_ms=?,record_version=record_version+1 WHERE user_id=? AND record_version=? RETURNING record_version"
+ ).bind(str||null,Date.now(),current.id,payload.version).first();
+ if(!updated)return err("profile_version_conflict",409);
+ return success({saved:true,field:payload.field,version:updated.record_version});
+}
+
 export async function portalRoute(request,env){
  const u=new URL(request.url),path=u.pathname,method=request.method;
- if(!["/login","/dashboard","/portal.js","/api/v1/portal/challenge","/api/v1/portal/google-login","/api/v1/portal/logout","/api/v1/portal/me"].includes(path))return null;
+ if(!["/login","/dashboard","/me/settings","/portal.js","/api/v1/portal/profile","/api/v1/portal/challenge","/api/v1/portal/google-login","/api/v1/portal/logout","/api/v1/portal/me"].includes(path))return null;
  if(![APP_ORIGIN,PREVIEW_ORIGIN].includes(u.origin))return err("invalid_host",404);
  if(path==="/portal.js"){
   if(method!=="GET")return err("method_not_allowed",405);
@@ -114,6 +148,15 @@ export async function portalRoute(request,env){
   if(method!=="GET")return err("method_not_allowed",405);
   const account=await portalUser(request,env);
   return account?portalResponse(dashboardPage(account)):Response.redirect(u.origin+"/login",303);
+ }
+ if(path==="/me/settings"){
+  if(method!=="GET")return err("method_not_allowed",405);
+  const account=await portalUser(request,env);
+  return account?portalResponse(settingsPage(account)):Response.redirect(u.origin+"/login",303);
+ }
+ if(path==="/api/v1/portal/profile"){
+  if(method!=="POST")return err("method_not_allowed",405);
+  return updateOwnProfile(request,env);
  }
  if(path==="/api/v1/portal/challenge"){
   if(method!=="GET")return err("method_not_allowed",405);
