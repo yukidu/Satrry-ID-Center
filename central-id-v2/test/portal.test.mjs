@@ -47,7 +47,8 @@ test("challenge cookie is random, secure, HttpOnly, SameSite Lax",async()=>{
  assert.equal(a.status,200);
  const data=await a.json();
  assert.equal(data.nonce.length,43);
- assert.match(data.google_client_id,/apps.googleusercontent.com$/);
+ assert.equal(data.google_client_id,"791614645185-vbaqqbnr463r1vi4ga41uh73s7eg0gv5.apps.googleusercontent.com");
+ assert.notEqual(data.google_client_id,"661055525630-ndcq5gtr16h7rqqprlqqkkvineea87lc.apps.googleusercontent.com");
  assert.match(a.headers.get("Set-Cookie"),/HttpOnly; Secure; SameSite=Lax/);
  const b=await app.fetch(req("/api/v1/portal/challenge"),env);
  assert.notEqual((await b.json()).nonce,data.nonce);
