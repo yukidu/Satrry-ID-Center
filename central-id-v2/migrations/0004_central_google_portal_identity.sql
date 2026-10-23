@@ -33,13 +33,14 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
   CHECK(expires_at_ms>issued_at_ms)
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user_scope ON auth_sessions(user_id,brand_scope,revoked_at_ms);
+CREATE TABLE IF NOT EXISTS education_centers (center_code TEXT PRIMARY KEY NOT NULL, display_name TEXT NOT NULL, is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)));
 CREATE TABLE IF NOT EXISTS member_profiles (
   user_id TEXT PRIMARY KEY NOT NULL REFERENCES identity_users(user_id) ON DELETE RESTRICT,
   display_name TEXT NOT NULL DEFAULT '',
   contact_email TEXT,
   mobile_e164 TEXT COLLATE BINARY,
   membership_system TEXT NOT NULL DEFAULT 'none' CHECK(membership_system IN ('hglobal','other','none')),
-  center_code TEXT,
+  center_code TEXT REFERENCES education_centers(center_code),
   amway_number TEXT,
   location_country TEXT,
   location_region TEXT,
@@ -55,6 +56,8 @@ CREATE TABLE IF NOT EXISTS member_profiles (
   CHECK(membership_system!='none' OR amway_number IS NULL)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uq_profiles_mobile_nonnull ON member_profiles(mobile_e164) WHERE mobile_e164 IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_profiles_amway ON member_profiles(amway_number);
+CREATE INDEX IF NOT EXISTS idx_profiles_center ON member_profiles(center_code);
 CREATE TABLE IF NOT EXISTS central_login_challenges (
   nonce_hash TEXT PRIMARY KEY,
   created_at_ms INTEGER NOT NULL,
