@@ -5,7 +5,8 @@ import {loginPage,dashboardPage,portalResponse,scriptResponse} from "./portal.mj
 import {portalClientCode} from "./portal-script.mjs";
 const APP_ORIGIN="https://id.hglobal1985.com";
 const PREVIEW_ORIGIN="https://hglobal-central-id-v2-preview.yukidu.workers.dev";
-const CLIENT_ID="661055525630-ndcq5gtr16h7rqqprlqqkkvineea87lc.apps.googleusercontent.com";
+// H-Global web portal has a separate Google OAuth client; Echo compatibility keeps the Starry client.
+const CLIENT_ID="791614645185-vbaqqbnr463r1vi4ga41uh73s7eg0gv5.apps.googleusercontent.com";
 const SESSION_COOKIE="central_id_portal";
 const NONCE_COOKIE="central_login_nonce";
 const SESSION_TTL=12*60*60*1000;
@@ -51,7 +52,7 @@ async function googleLogin(request,env){
  try{const raw=await request.text();if(raw.length>12000)return err("too_large",413);payload=JSON.parse(raw);}catch{return err("invalid_json");}
  if(payload?.appId!=="central"||payload.termsAccepted!==true)return err("consent_required",400);
  let verified;
- try{verified=await compatTest.googleClaims(payload.credential);}catch{return err("credential_invalid",401);}
+ try{verified=await compatTest.googleClaims(payload.credential,fetch,CLIENT_ID);}catch{return err("credential_invalid",401);}
  let jwt;
  try{
   const token=payload.credential.split(".")[1].replace(/-/g,"+").replace(/_/g,"/");
