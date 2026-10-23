@@ -5,7 +5,7 @@
    logout.addEventListener("click",async()=>{
      say("正在安全登出…");
      try{
-       const r=await fetch("/api/logout",{method:"POST",credentials:"same-origin"});
+       const r=await fetch("/api/v1/portal/logout",{method:"POST",credentials:"same-origin"});
        if(!r.ok)throw Error("logout_failed");
        location.replace("/login");
      }catch{say("登出未完成，請重新嘗試。");}
@@ -37,7 +37,7 @@
        }
        say("正在驗證 Google 身分並建立安全 Session…");
        try{
-         const res=await fetch("/api/google-sync",{
+         const res=await fetch("/api/v1/portal/google-login",{
            method:"POST",credentials:"same-origin",
            headers:{"Content-Type":"application/json"},
            body:JSON.stringify({credential:googleResponse.credential,appId:"central",termsAccepted:true})
