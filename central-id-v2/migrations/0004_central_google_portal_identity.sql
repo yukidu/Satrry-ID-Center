@@ -63,3 +63,14 @@ CREATE TABLE IF NOT EXISTS central_login_challenges (
   CHECK(expires_at_ms>created_at_ms)
 );
 CREATE INDEX IF NOT EXISTS idx_central_login_challenge_expiry ON central_login_challenges(expires_at_ms);
+
+CREATE TABLE IF NOT EXISTS consent_records (
+  consent_event_id TEXT PRIMARY KEY NOT NULL,
+  user_id TEXT NOT NULL REFERENCES identity_users(user_id) ON DELETE RESTRICT,
+  consent_purpose TEXT NOT NULL,
+  policy_version TEXT NOT NULL,
+  action TEXT NOT NULL CHECK(action IN ('grant','withdraw')),
+  event_at_ms INTEGER NOT NULL,
+  evidence_reference TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_consent_user_purpose ON consent_records(user_id,consent_purpose,event_at_ms);
