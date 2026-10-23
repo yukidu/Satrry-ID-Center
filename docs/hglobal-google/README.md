@@ -17,7 +17,7 @@
 
 應用名稱：H-Global 中央會員 ID；External；支援與開發者 Email：hglobal1985@gmail.com；授權網域：hglobal1985.com。
 Web Client 名稱：H-Global Central ID Web；正式 JavaScript origin：https://id.hglobal1985.com。
-新 Client ID：尚未取得；不得使用測試 fixture 值部署。
+新 Client ID（帳號持有人提供）：`791614645185-vbaqqbnr463r1vi4ga41uh73s7eg0gv5.apps.googleusercontent.com`。已設定 Preview，尚未驗證 Google Console origins 與真實登入。
 
 Google 官方 OAuth 最佳實務明確要求 Console 建立及修改一般 OAuth client，不能承諾提供自動建立、修改或刪除這些 client 的公開 API。IAP 或 IAM 同名 OAuth 介面不得當成一般 Google Sign-In client API。
 
@@ -145,3 +145,9 @@ Cloud IAM 與使用者 Google 資料授權分開：WIF 不會自動授權 Gmail 
 進一步唯讀 testIamPermissions 與配額 API 查詢未執行：自動核准審查因使用額度限制無法完成。這不是判定查詢不安全；需待審查恢復再重試，不改用其他工具繞過審查。已完成的 IAM policy 讀取仍有效，但不能聲稱逐項有效權限測試完成。
 
 目前可開啟 Console 分頁，但工具沒有讀取或操作該已登入分頁的能力。需要帳號持有人完成官方 Console 的 OAuth client 設定並提供公開 Client ID，不能把開啟頁面當作設定完成。
+
+## Preview 新 Client ID 部署紀錄
+
+2026-10-23：Cloudflare 上傳成功（HTTP 200），deployment_id `81ffdcc3110143a6993b71f993b9e44b`。部署目標僅 `hglobal-central-id-v2-preview`，程式為 PR #31 的隔離版本；設定回讀確認 HGLOBAL_GOOGLE_CLIENT_ID 等於帳號持有人提供的新 ID。保留 Preview 的 CENTRAL_DB、LEGACY_AUTH_DB 與 ECHO_TICKETS_ENABLED 設定。唯讀 schema 查詢確認 portal 所需資料表已存在，rows_written=0，未執行遷移。
+
+自動 HTTP 檢查 `/login`、`/api/v1/portal/challenge`、`/api/v1/compat/readiness` 仍均為 403，原因未確認，不能當作真實登入成功。下一步由帳號持有人開啟 https://hglobal-central-id-v2-preview.yukidu.workers.dev/login 測試並回報畫面。Production 未部署，PR 未合併，Starry client 未修改。
