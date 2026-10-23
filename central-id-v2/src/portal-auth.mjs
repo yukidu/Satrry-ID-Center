@@ -55,7 +55,7 @@ async function googleLogin(request,env){
  let jwt;
  try{
   const token=payload.credential.split(".")[1].replace(/-/g,"+").replace(/_/g,"/");
-  jwt=JSON.parse(atob(token+"=".repeat((4-token.length%4)%4)));
+  jwt=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(token+"=".repeat((4-token.length%4)%4)),c=>c.charCodeAt(0))));
  }catch{return err("credential_invalid",401);}
  const challenge=cookie(request,NONCE_COOKIE),now=Date.now();
  if(!RE.test(challenge)||typeof jwt.nonce!=="string"||jwt.nonce!==challenge)return err("nonce_invalid",401);
