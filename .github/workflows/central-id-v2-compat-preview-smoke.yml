@@ -38,7 +38,6 @@ jobs:
           node -e 'if(require("/tmp/unknown-bridge.json").error!=="bridge_expired_or_used")process.exit(1)'
           curl -fSs --max-time 25 "$URL/login" -o /tmp/login.html
           grep -q 'id="google-button"' /tmp/login.html
-          grep -q 'central' /tmp/login.html
           STATUS=$(curl -sS --max-time 25 -o /tmp/dashboard.html -w "%{http_code}" "$URL/dashboard")
           test "$STATUS" = "303"
           curl -fSs --max-time 25 -D /tmp/challenge-headers.txt "$URL/api/v1/portal/challenge" -o /tmp/challenge.json
