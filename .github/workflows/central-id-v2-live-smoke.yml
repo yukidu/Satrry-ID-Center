@@ -40,4 +40,22 @@ jobs:
           test "$STATUS" = "401"
           STATUS=$(curl -sS --max-time 25 -w "%{http_code}" -o /tmp/invalid-origin.json -X POST -H "Origin: https://evil.example" -H "Content-Type: application/json" -d '{"appId":"echostars","credential":"invalid"}' https://id.hglobal1985.com/api/google-sync)
           test "$STATUS" = "403"
+          curl -fSs --max-time 25 -o /tmp/portal-home.html https://id.hglobal1985.com/
+          grep -q 'href="/login">Google 會員登入' /tmp/portal-home.html
+          curl -fSs --max-time 25 -D /tmp/portal-headers.txt -o /tmp/portal-login.html https://id.hglobal1985.com/login
+          grep -q 'id="google-button"' /tmp/portal-login.html
+          grep -qi "content-security-policy:.*accounts.google.com/gsi/client" /tmp/portal-headers.txt
+          STATUS=$(curl -sS --max-time 25 -o /tmp/portal-private.html -w "%{http_code}" https://id.hglobal1985.com/dashboard)
+          test "$STATUS" = "303"
+          curl -fSs --max-time 25 -D /tmp/portal-challenge-headers.txt -o /tmp/portal-challenge.json https://id.hglobal1985.com/api/v1/portal/challenge
+          node -e 'const d=require("/tmp/portal-challenge.json");if(d.nonce?.length!==43 || !d.google_client_id?.endsWith(".apps.googleusercontent.com"))throw Error("bad challenge")'
+          grep -qi 'set-cookie:.*HttpOnly.*Secure.*SameSite=Lax' /tmp/portal-challenge-headers.txt
+          STATUS=$(curl -sS --max-time 25 -o /tmp/portal-badgoogle.json -w "%{http_code}" -X POST -H "Origin: https://id.hglobal1985.com" -H "Content-Type: application/json" -d '{"appId":"central","termsAccepted":true,"credential":"forged.bad.jwt"}' https://id.hglobal1985.com/api/v1/portal/google-login)
+          test "$STATUS" = "401"
+          STATUS=$(curl -sS --max-time 25 -o /tmp/portal-noauth.json -w "%{http_code}" https://id.hglobal1985.com/api/v1/portal/me)
+          test "$STATUS" = "401"
+          curl -fSs --max-time 25 -o /tmp/portal-client.js https://id.hglobal1985.com/portal.js
+          grep -q 'google.accounts.id.initialize' /tmp/portal-client.js
+          node -e 'const fs=require("fs");const d=require("/tmp/migration-status.json");if(d.portal_entry_available!==true || d.member_login_enabled!==false)throw Error("portal readiness misreported")'
+          echo 'PASS: production home login CTA, secure Google nonce, protected dashboard, forged token rejection, Echo isolation'
           echo 'PASS: actual production Echo tickets enabled, live revocation source verified, anonymous and forged attempts rejected; full Echo cutover gate remains false'
