@@ -12,11 +12,16 @@ test("central homepage presents real login entry and private dashboard redirects
  assert.match(h,/href="\/login">Google 會員登入/);
  const login=await app.fetch(req("/login"));
  assert.equal(login.status,200);
- assert.match(await login.text(),/id="google-button"/);
+ const loginHtml=await login.text();
+ assert.match(loginHtml,/id="google-button"/);
+ assert.doesNotMatch(loginHtml,/starry|繁星|echo|id\.starry\.phd/i);
  assert.match(login.headers.get("Content-Security-Policy"),/accounts.google.com\/gsi\/client/);
  const dashboard=await app.fetch(req("/dashboard"));
  assert.equal(dashboard.status,303);
  assert.equal(dashboard.headers.get("Location"),base+"/login");
+ const settings=await app.fetch(req("/me/settings"));
+ assert.equal(settings.status,303);
+ assert.equal(settings.headers.get("Location"),base+"/login");
  const anon=await app.fetch(req("/api/v1/portal/me"));
  assert.equal(anon.status,401);
 });
@@ -61,4 +66,11 @@ test("invalid login attempt cannot create member session or receive admin privil
  }),{CENTRAL_DB:{prepare(){throw Error("unexpected DB")}}});
  assert.equal(bad.status,400);
  assert.equal((await bad.json()).error,"consent_required");
+});
+
+test("profile writes are authenticated, same-origin and allowlisted",async()=>{
+ const unauth=await app.fetch(req("/api/v1/portal/profile",{method:"POST",headers:{Origin:base,"Content-Type":"application/json"},body:JSON.stringify({field:"display_name",value:"someone",version:1})}));
+ assert.equal(unauth.status,503); // Missing D1 is fail closed.
+ const wrongOrigin=await app.fetch(req("/api/v1/portal/profile",{method:"POST",headers:{Origin:"https://attacker.example","Content-Type":"application/json"},body:"{}"}));
+ assert.equal(wrongOrigin.status,403);
 });
