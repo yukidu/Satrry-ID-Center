@@ -36,4 +36,18 @@ jobs:
           STATUS=$(curl -sS -o /tmp/unknown-bridge.json -w "%{http_code}" --max-time 25 "$URL/auth/echo/continue?code=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB")
           test "$STATUS" = "401"
           node -e 'if(require("/tmp/unknown-bridge.json").error!=="bridge_expired_or_used")process.exit(1)'
+          curl -fSs --max-time 25 "$URL/login" -o /tmp/login.html
+          grep -q 'id="google-button"' /tmp/login.html
+          grep -q 'central' /tmp/login.html
+          STATUS=$(curl -sS --max-time 25 -o /tmp/dashboard.html -w "%{http_code}" "$URL/dashboard")
+          test "$STATUS" = "303"
+          curl -fSs --max-time 25 -D /tmp/challenge-headers.txt "$URL/api/v1/portal/challenge" -o /tmp/challenge.json
+          node -e 'const d=require("/tmp/challenge.json");if(!d.nonce||d.nonce.length!==43||!d.google_client_id?.endsWith(".apps.googleusercontent.com"))throw Error("central challenge failed")'
+          grep -qi 'set-cookie:.*HttpOnly.*Secure.*SameSite=Lax' /tmp/challenge-headers.txt
+          STATUS=$(curl -sS --max-time 25 -o /tmp/forged-portal.json -w "%{http_code}" -X POST -H "Origin: $URL" -H "Content-Type: application/json" -d '{"appId":"central","termsAccepted":true,"credential":"fake.jwt.token"}' "$URL/api/v1/portal/google-login")
+          test "$STATUS" = "401"
+          STATUS=$(curl -sS --max-time 25 -o /tmp/anonymous-portal.json -w "%{http_code}" "$URL/api/v1/portal/me")
+          test "$STATUS" = "401"
+          curl -fSs --max-time 25 "$URL/portal.js" -o /tmp/portal.js
+          grep -q "google.accounts.id.initialize" /tmp/portal.js
           echo "PASS: preview D1 connected, no anonymous data, one-time tickets fail closed, no cutover claim"
