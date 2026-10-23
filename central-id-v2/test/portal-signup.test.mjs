@@ -58,7 +58,7 @@ test("Google verified token creates an unapproved account once, no email merge o
  const enc=v=>Buffer.from(JSON.stringify(v)).toString("base64url");
  const data=enc({alg:"RS256",kid:jwk.kid})+"."+enc({
   iss:"https://accounts.google.com",
-  aud:"661055525630-ndcq5gtr16h7rqqprlqqkkvineea87lc.apps.googleusercontent.com",
+  aud:"791614645185-vbaqqbnr463r1vi4ga41uh73s7eg0gv5.apps.googleusercontent.com",
   sub:"google-central-user-subject-01",email_verified:true,name:"測試訪客",iat:epoch-10,exp:epoch+1000,nonce
  });
  const signature=await webcrypto.subtle.sign("RSASSA-PKCS1-v1_5",keypair.privateKey,new TextEncoder().encode(data));
@@ -87,6 +87,21 @@ test("Google verified token creates an unapproved account once, no email merge o
  const replay=await app.fetch(authRequest(),{CENTRAL_DB:db});
  assert.equal(replay.status,401);
  assert.equal((await replay.json()).error,"nonce_expired_or_replayed");
+ // Regression: a real Google-signed token for Starry must not log in to the H-Global portal.
+ const legacyChallenge=await app.fetch(new Request(base+"/api/v1/portal/challenge"),{CENTRAL_DB:db});
+ const legacyNonce=(await legacyChallenge.json()).nonce;
+ const legacyParts=enc({alg:"RS256",kid:jwk.kid})+"."+enc({
+  iss:"https://accounts.google.com",aud:"661055525630-ndcq5gtr16h7rqqprlqqkkvineea87lc.apps.googleusercontent.com",
+  sub:"legacy-audience-not-central",email_verified:true,name:"Starry identity",iat:epoch-10,exp:epoch+1000,nonce:legacyNonce
+ });
+ const legacySignature=await webcrypto.subtle.sign("RSASSA-PKCS1-v1_5",keypair.privateKey,new TextEncoder().encode(legacyParts));
+ const oldAudienceResponse=await app.fetch(new Request(base+"/api/v1/portal/google-login",{
+  method:"POST",headers:{Origin:base,"Content-Type":"application/json",Cookie:"central_login_nonce="+legacyNonce},
+  body:JSON.stringify({appId:"central",termsAccepted:true,credential:legacyParts+"."+Buffer.from(legacySignature).toString("base64url")})
+ }),{CENTRAL_DB:db});
+ assert.equal(oldAudienceResponse.status,401);
+ assert.equal((await oldAudienceResponse.json()).error,"credential_invalid");
+ assert.equal(db.users.size,1);
  const logout=await app.fetch(new Request(base+"/api/v1/portal/logout",{method:"POST",headers:{Origin:base,Cookie:portalCookie}}),{CENTRAL_DB:db});
  assert.equal(logout.status,200);
  dashboard=await app.fetch(new Request(base+"/dashboard",{headers:{Cookie:portalCookie}}),{CENTRAL_DB:db});
