@@ -6,6 +6,13 @@ import {portalClientCode} from "./portal-script.mjs";
 const APP_ORIGIN="https://id.hglobal1985.com";
 const PREVIEW_ORIGIN="https://hglobal-central-id-v2-preview.yukidu.workers.dev";
 const CLIENT_ID="661055525630-ndcq5gtr16h7rqqprlqqkkvineea87lc.apps.googleusercontent.com";
+// During migration, an absent binding preserves the existing production login.
+// An explicitly invalid binding fails closed; it must never silently use Starry.
+function portalClientId(env){
+ const value=env?.HGLOBAL_GOOGLE_CLIENT_ID;
+ if(value===undefined)return CLIENT_ID;
+ return typeof value==="string" && /^[0-9]+-[a-zA-Z0-9_-]+\.apps\.googleusercontent\.com$/.test(value)?value:null;
+}
 const SESSION_COOKIE="central_id_portal";
 const NONCE_COOKIE="central_login_nonce";
 const SESSION_TTL=12*60*60*1000;
@@ -50,8 +57,10 @@ async function googleLogin(request,env){
  let payload;
  try{const raw=await request.text();if(raw.length>12000)return err("too_large",413);payload=JSON.parse(raw);}catch{return err("invalid_json");}
  if(payload?.appId!=="central"||payload.termsAccepted!==true)return err("consent_required",400);
+ const clientId=portalClientId(env);
+ if(!clientId)return err("oauth_configuration_invalid",503);
  let verified;
- try{verified=await compatTest.googleClaims(payload.credential);}catch{return err("credential_invalid",401);}
+ try{verified=await compatTest.googleClaims(payload.credential,fetch,clientId);}catch{return err("credential_invalid",401);}
  let jwt;
  try{
   const token=payload.credential.split(".")[1].replace(/-/g,"+").replace(/_/g,"/");
@@ -117,9 +126,11 @@ export async function portalRoute(request,env){
  if(path==="/api/v1/portal/challenge"){
   if(method!=="GET")return err("method_not_allowed",405);
   if(!identityDb(env))return err("database_unavailable",503);
+  const clientId=portalClientId(env);
+  if(!clientId)return err("oauth_configuration_invalid",503);
   const nonce=rand(),now=Date.now();
   await env.CENTRAL_DB.prepare("INSERT INTO central_login_challenges(nonce_hash,created_at_ms,expires_at_ms) VALUES(?,?,?)").bind(await hex(nonce),now,now+NONCE_TTL).run();
-  return success({google_client_id:CLIENT_ID,nonce,expires_in:600},{'Set-Cookie':cookieFlag(NONCE_COOKIE,nonce,Math.floor(NONCE_TTL/1000))});
+  return success({google_client_id:clientId,nonce,expires_in:600},{'Set-Cookie':cookieFlag(NONCE_COOKIE,nonce,Math.floor(NONCE_TTL/1000))});
  }
  if(path==="/api/v1/portal/google-login"){
   if(method!=="POST")return err("method_not_allowed",405);

@@ -61,3 +61,12 @@ test("invalid login attempt cannot create member session or receive admin privil
  assert.equal(bad.status,400);
  assert.equal((await bad.json()).error,"consent_required");
 });
+
+test("explicit invalid central client configuration fails closed before database writes",async()=>{
+ for(const value of ["",null,"attacker",42]){
+  const env={HGLOBAL_GOOGLE_CLIENT_ID:value,CENTRAL_DB:{prepare(){throw Error("no writes");}}};
+  const r=await app.fetch(req("/api/v1/portal/challenge"),env);
+  assert.equal(r.status,503);
+  assert.equal((await r.json()).error,"oauth_configuration_invalid");
+ }
+});

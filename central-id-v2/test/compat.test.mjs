@@ -51,6 +51,12 @@ test("Google JWT accepts only authentic RS256 and exact audience",async()=>{
   const fetcher=async()=>({ok:true,json:async()=>({keys:[jwk]})});
   const valid=await compatTest.googleClaims(await token(claims),fetcher);
   assert.equal(valid.subject,claims.sub);
+  const centralAud="1234567890-hglobal-test.apps.googleusercontent.com";
+  const centralToken=await token({...claims,aud:centralAud});
+  assert.equal((await compatTest.googleClaims(centralToken,fetcher,centralAud)).subject,claims.sub);
+  await assert.rejects(compatTest.googleClaims(centralToken,fetcher),/claims_invalid/);
+  await assert.rejects(compatTest.googleClaims(await token(claims),fetcher,centralAud),/claims_invalid/);
+  await assert.rejects(compatTest.googleClaims(await token({...claims,aud:centralAud,azp:claims.aud}),fetcher,centralAud),/claims_invalid/);
   await assert.rejects(compatTest.googleClaims(await token({...claims,aud:"attacker-app"}),fetcher),/claims_invalid/);
   await assert.rejects(compatTest.googleClaims(await token({...claims,email_verified:false}),fetcher),/claims_invalid/);
   await assert.rejects(compatTest.googleClaims(await token({...claims,exp:now-10}),fetcher),/claims_invalid/);
