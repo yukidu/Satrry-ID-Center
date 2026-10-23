@@ -1,3 +1,4 @@
+import {portalRoute} from "./portal-auth.mjs";
 import { compatibility } from "./compat.mjs";
 // Central ID v2 public-only shell. No legacy DB, OAuth or private data access.
 // Deployment must remain read-only until auth / privacy / security gates pass.
@@ -17,20 +18,27 @@ function json(data, code=200) {
 export default {
   async fetch(request,env) {
     const url=new URL(request.url);
+    const portal=await portalRoute(request,env);
+    if(portal)return portal;
     const compat=await compatibility(request,env);
     if(compat)return compat;
     if(request.method!=="GET" && request.method!=="HEAD"){
       return json({error:"not_enabled",message:"新版中央會員資料寫入與申訴尚未啟用。"},503);
     }
     if(url.pathname==="/healthz" || url.pathname==="/api/v1/status") {
-      return json({service:"hglobal-central-id-v2",status:"ok",phase:"public-information",member_login_enabled:false,compatibility_auth_stage:"identity_verification_code_deployed_not_accepted_for_cutover",member_data_enabled:false,directory_enabled:false,complaints_enabled:false,legacy_linked:false,legacy_snapshot:{state:"copied-and-verified",tables:61,rows:4849,source_member_count:74,isolated:true,production_login_reuse:false,checked_on:"2026-10-23"},build:"2026-10-23.3"});
+      return json({service:"hglobal-central-id-v2",status:"ok",phase:"public-information",member_login_enabled:false,portal_entry_available:true,google_id_token_backend_available:true,google_browser_origin_authorization_unverified:true,apple_web_signin_configured:false,compatibility_auth_stage:"identity_verification_code_deployed_not_accepted_for_cutover",member_data_enabled:false,directory_enabled:false,complaints_enabled:false,legacy_linked:false,legacy_snapshot:{state:"copied-and-verified",tables:61,rows:4849,source_member_count:74,isolated:true,production_login_reuse:false,checked_on:"2026-10-23"},build:"2026-10-23.3"});
     }
     if(url.pathname==="/api/v1/public/help"){
       return json({phase:"public-information",help:[{q:"新版可以註冊嗎？",a:"目前僅公開資訊頁，尚未啟用登入註冊。"},{q:"舊 Starry ID 是否同步？",a:"否；兩站不互連、不導流、不即時同步。"},{q:"H-Global 是否使用 Starry 電池？",a:"否；Starry 電池僅限 Starry 生態系。"}]});
     }
     if(url.pathname==="/robots.txt") return new Response("User-agent: *\nDisallow: /\n",{headers:{...common,"Content-Type":"text/plain; charset=utf-8"}});
     if(url.pathname==="/" || url.pathname==="/help" || url.pathname==="/features") {
-      return new Response(request.method==="HEAD"?null:HTML,{headers:{...common,"Content-Type":"text/html; charset=utf-8"}});
+      const home=HTML.replace('href="#features">探索規劃功能 ↓','href="/login">Google 會員登入 →')
+        .replace('中央登入、註冊、會員資料、審核、公開名錄與申訴等交易功能尚未啟用。','中央 Google 登入入口與訪客控制台已建立；正式會員審核、Apple 登入、完整名片與管理功能仍需另行驗收。')
+        .replace('網站首頁已開放 · 會員功能未啟用','Google 登入入口已提供 · 審核功能建置中')
+        .replace('現在可以註冊新中央帳號嗎？','現在可以登入中央帳號嗎？')
+        .replace('不行。新版入口目前只上線公開資訊頁，正式登入、註冊及個人資料儲存尚未啟用。','已提供 Google 登入／註冊入口，先以訪客身分使用。若 Google 顯示網域未授權，需在 Google Auth Platform 加入新網域。正式會員資格及獎銜需審核。');
+      return new Response(request.method==="HEAD"?null:home,{headers:{...common,"Content-Type":"text/html; charset=utf-8"}});
     }
     if(url.pathname.startsWith("/api/")) return json({error:"not_enabled",message:"此 API 尚未開放。"},503);
     return new Response("此頁尚未開放。請返回中央會員 ID 首頁。",{status:404,headers:{...common,"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"}});
