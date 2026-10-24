@@ -129,6 +129,17 @@ export async function sweepExpiredAvailableLots(db,time=nowMs(),limit=50){
  }
  return {checked:lots.length,cleared,failed};
 }
+// Prevent unbounded D1 growth: API rate-limit windows older than 48 hours
+// are transient counters, not the immutable member transaction ledger.
+export async function sweepOldRateLimitWindows(db,time=nowMs(),limit=500){
+ if(!Number.isSafeInteger(limit)||limit<1||limit>1000)throw Error("invalid_sweep_limit");
+ const cutoff=time-48*3600000;
+ const result=await db.prepare(
+  "DELETE FROM battery_app_rate_limits WHERE (app_id,window_start_ms) IN "+
+  "(SELECT app_id,window_start_ms FROM battery_app_rate_limits WHERE window_start_ms<? ORDER BY window_start_ms LIMIT ?)"
+ ).bind(cutoff,limit).run();
+ return {deleted:Number(result?.meta?.changes||0)};
+}
 export default{
  async scheduled(_event,env){
   if(!env?.BATTERY_DB?.batch)return;
@@ -136,6 +147,7 @@ export default{
   // Failed items are retried on the next tick. A small batch bounds D1 work.
   await sweepExpiredReservations(env.BATTERY_DB);
   await sweepExpiredAvailableLots(env.BATTERY_DB);
+  await sweepOldRateLimitWindows(env.BATTERY_DB);
  },
  async fetch(request,env){
   const url=new URL(request.url);
