@@ -131,9 +131,38 @@ async function updateOwnProfile(request,env){
  return success({saved:true,field:payload.field,version:updated.record_version});
 }
 
+// Revoke every *central-portal* session for this member in one D1
+// transaction. auth_version also invalidates derived Central service tokens
+// and prevents a concurrently issued old-version session from staying valid.
+// Other products' independent legacy sessions require their own cutover Gate.
+async function logoutEveryCentralDevice(request,env){
+ if(!originOk(request))return err("origin_not_allowed",403);
+ if(!identityDb(env)||typeof env.CENTRAL_DB.batch!=="function")return err("database_unavailable",503);
+ let member;
+ try{member=await portalUser(request,env);}catch{return err("logout_failed",503);}
+ if(!member)return err("unauthorized",401);
+ const now=Date.now();
+ try{
+  const results=await env.CENTRAL_DB.batch([
+   env.CENTRAL_DB.prepare(
+    "UPDATE identity_users SET auth_version=auth_version+1,updated_at_ms=? WHERE user_id=? AND suspended_at_ms IS NULL AND deleted_at_ms IS NULL RETURNING auth_version"
+   ).bind(now,member.id),
+   env.CENTRAL_DB.prepare(
+    "UPDATE auth_sessions SET revoked_at_ms=? WHERE user_id=? AND revoked_at_ms IS NULL"
+   ).bind(now,member.id)
+  ]);
+  if(!Array.isArray(results)||results[0]?.success!==true||
+     results[0]?.results?.length!==1||results[1]?.success!==true)
+   return err("logout_failed",503);
+ }catch{return err("logout_failed",503);}
+ return success({ok:true,central_devices_signed_out:true},{
+  "Set-Cookie":cookieFlag(SESSION_COOKIE,"",0)
+ });
+}
+
 export async function portalRoute(request,env){
  const u=new URL(request.url),path=u.pathname,method=request.method;
- if(!["/login","/dashboard","/me/settings","/portal.js","/api/v1/portal/profile","/api/v1/portal/challenge","/api/v1/portal/google-login","/api/v1/portal/logout","/api/v1/portal/me"].includes(path))return null;
+ if(!["/login","/dashboard","/me/settings","/portal.js","/api/v1/portal/profile","/api/v1/portal/challenge","/api/v1/portal/google-login","/api/v1/portal/logout","/api/v1/portal/logout-all","/api/v1/portal/me"].includes(path))return null;
  if(![APP_ORIGIN,PREVIEW_ORIGIN].includes(u.origin))return err("invalid_host",404);
  if(path==="/portal.js"){
   if(method!=="GET")return err("method_not_allowed",405);
@@ -168,6 +197,10 @@ export async function portalRoute(request,env){
  if(path==="/api/v1/portal/google-login"){
   if(method!=="POST")return err("method_not_allowed",405);
   return googleLogin(request,env);
+ }
+ if(path==="/api/v1/portal/logout-all"){
+  if(method!=="POST")return err("method_not_allowed",405);
+  return logoutEveryCentralDevice(request,env);
  }
  if(path==="/api/v1/portal/logout"){
   if(method!=="POST")return err("method_not_allowed",405);
