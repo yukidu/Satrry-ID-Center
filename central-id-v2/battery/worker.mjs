@@ -62,7 +62,11 @@ export default {
    let wallet;
    try{wallet=await env.BATTERY_DB.prepare("SELECT available_units,reserved_units,version FROM battery_wallets WHERE user_id=?").bind(principal.userId).first();}
    catch{return json({error:"database_unavailable"},503);}
-   return json({available_units:wallet?.available_units||0,reserved_units:wallet?.reserved_units||0,version:wallet?.version||0});
+   let debt;
+   try{debt=await env.BATTERY_DB.prepare("SELECT debt_units,successful_uses,active_reservation_id FROM battery_overdraft_accounts WHERE user_id=?").bind(principal.userId).first();}
+   catch{return json({error:"overdraft_schema_unavailable"},503);}
+   const owed=Number(debt?.debt_units||0),available=Number(wallet?.available_units||0);
+   return json({available_units:available-owed,spendable_units:available,debt_units:owed,reserved_units:wallet?.reserved_units||0,overdraft_remaining:2-Number(debt?.successful_uses||0),overdraft_in_progress:Boolean(debt?.active_reservation_id),version:wallet?.version||0});
   }
   if(isLedger){
    let rows;
@@ -78,7 +82,7 @@ export default {
   if(!body||typeof body!=="object"||Array.isArray(body)||
       Object.keys(body).sort().join(",")!==(op==="reserve"?"operation_id,quantity":"operation_id")||
       !/^[A-Za-z0-9_-]{8,120}$/.test(body.operation_id||"")||
-      (op==="reserve"&&(!Number.isSafeInteger(body.quantity)||body.quantity<=0||body.quantity>1000000)))
+      (op==="reserve"&&(!Number.isSafeInteger(body.quantity)||body.quantity<=0||body.quantity>Number.MAX_SAFE_INTEGER)))
      return json({error:"invalid_operation"},400);
   // Forward authenticated principal, not caller-provided user_id/app_id. Only private binding may reach Engine.
   const forwarded={operation_id:body.operation_id,quantity:op==="reserve"?body.quantity:undefined,
