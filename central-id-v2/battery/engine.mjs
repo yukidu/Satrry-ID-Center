@@ -63,6 +63,10 @@ export async function settle(db,c,action,time=nowMs()){
  const allocations=await many(db,
   "SELECT a.lot_id,a.quantity,l.expires_at_ms FROM battery_reservation_allocations a JOIN battery_lots l ON l.lot_id=a.lot_id WHERE a.reservation_id=? ORDER BY l.expires_at_ms,a.lot_id",r.reservation_id);
  if(allocations.reduce((n,a)=>n+a.quantity,0)!==r.quantity)return reply({error:"reservation_corrupt"},503);
+ // A reserved lot may reach its own expiry before the AI task finishes. It cannot
+ // be consumed after expiry, even if the three-minute reservation has not timed out.
+ if(action==="commit"&&allocations.some(a=>a.expires_at_ms<=time))
+  return reply({error:"reservation_lot_expired_must_release"},409);
  const next=action==="commit"?"committed":(time>=r.deadline_at_ms?"expired":"released");
  const ops=[stmt(db,
    "UPDATE battery_reservations SET state=CASE WHEN state='reserved' AND (?='released' OR ?='expired' OR deadline_at_ms>?) THEN ? ELSE 'invalid' END WHERE reservation_id=? AND user_id=?",
@@ -73,10 +77,14 @@ export async function settle(db,c,action,time=nowMs()){
   ops.push(stmt(db,"INSERT INTO battery_ledger(entry_id,user_id,app_id,operation_id,quantity_delta,created_at_ms) VALUES(?,?,?,?,?,?)",
     SEC().randomUUID(),c.user_id,c.app_id,c.operation_id,-r.quantity,time));
  }else{
-  // Release to original source lots. Lot expiry maintenance must subsequently
-  // zero expired available units before reporting spendable balance.
-  ops.push(stmt(db,"UPDATE battery_wallets SET reserved_units=reserved_units-?,available_units=available_units+?,version=version+1 WHERE user_id=?",r.quantity,r.quantity,c.user_id));
-  for(const a of allocations)ops.push(stmt(db,"UPDATE battery_lots SET reserved_units=reserved_units-?,available_units=available_units+? WHERE lot_id=? AND user_id=?",a.quantity,a.quantity,a.lot_id,c.user_id));
+  // Refunding an expired source lot to spendable balance resurrects already-expired
+  // funds. Return only still-valid lots; clear all reserved units, including expired.
+  const refundable=allocations.reduce((n,a)=>n+(a.expires_at_ms>time?a.quantity:0),0);
+  ops.push(stmt(db,"UPDATE battery_wallets SET reserved_units=reserved_units-?,available_units=available_units+?,version=version+1 WHERE user_id=?",r.quantity,refundable,c.user_id));
+  for(const a of allocations){
+   const refundableLot=a.expires_at_ms>time?a.quantity:0;
+   ops.push(stmt(db,"UPDATE battery_lots SET reserved_units=reserved_units-?,available_units=available_units+? WHERE lot_id=? AND user_id=?",a.quantity,refundableLot,a.lot_id,c.user_id));
+  }
  }
  try{await db.batch(ops);return reply({...summary({...r,state:next}),idempotent:false});}
  catch{
