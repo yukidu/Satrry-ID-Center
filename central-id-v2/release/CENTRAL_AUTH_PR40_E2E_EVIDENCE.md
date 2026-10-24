@@ -47,3 +47,17 @@
 - GitHub Environment／Secrets 最小權限及兩服務生產環境實際發布隔離，仍需單獨驗收。
 
 **狀態：中央私有隔離 Service Binding 11/11 E2E 通過；整體跨服務與正式 Production 未完成。**
+
+
+## 最新補充：Session 綁定版本 v3（2026-10-24，取代上述舊 11/11 基準）
+
+- 採 `0006_private_cross_app_tokens.sql` 原本的 `source_session_hash NOT NULL` 欄位，不新增重複 0007。中央 Token 必須外鍵綁定真實 `auth_sessions.session_id_hash`。
+- `src/private-token-issuer.mjs` 為中央內部候選，預設停用，只能由可信任中央 Controller 在防 CSRF 等條件已驗證後呼叫；原子 `INSERT SELECT` 從仍有效的中央 Session、會員與 Starry brand grant 發出 5 分鐘內的 opaque bearer，不允許自報 user_id。
+- `src/private-introspection.mjs` 每次對照中央原 Session 的撤銷、到期、品牌、原版本、正式審核/停權/刪帳和品牌授權；登出後衍生 Token 不能繼續使用。
+- 新建全新中央 D1 `central-auth-session-pr40-isolated-20261024` UUID `43787073-ec7b-4391-ac71-94e3b0890dd4`；0004 共 14 個 SQL statements、最新 0006 共 6 個 statements 全部成功。此為隔離環境、沒有正式會員。
+- 新版中央 Auth Worker `hglobal-central-auth-private-session-pr40-20261024` 及 E2E Runner `hglobal-central-auth-e2e-session-pr40-20261024` 只使用此中央 D1 與受保護 Service Binding，公開 Workers.dev 及 Preview URL 均已關閉。秘密值僅存 Cloudflare Secrets，未寫入 GitHub。
+- Cloudflare 真實執行 E2E Runner，結果已存入隔離中央 D1 `central_auth_e2e_results`：`run_id=central-auth-pr40-20261024-e2e-3`，**passed=13,total=13**，全部通過。
+  1. 未知 Token 拒絕；2. 缺少 private Caller Secret 拒絕；3. 中央 Session 有效且通過資格才能發放 Token；4. 合法 Token 驗證取得中央 user_id；5. 呼叫者偽造 user_id 拒絕；6. 錯誤 Caller Secret 拒絕；7. 假冒其他品牌拒絕；8. 撤銷 Starry 授權拒絕；9. 中央 auth_version 改變拒絕；10. **原中央 Session 登出，衍生 Token 立即失效**；11. 暫停會員拒絕；12. 已刪帳會員拒絕；13. 測試假會員資料清理成功。
+- 已再次核對 identity_users/auth_sessions/central_brand_authorizations/central_service_access_tokens 四類假會員資料全為 0、PRAGMA foreign_key_check 無違規；一次性 Runner Cron 已 PUT 停用並以 GET 讀回 `schedules: []`，避免持續計費。
+- 此結果取代之前「新 E2E pending」的暫時狀態；**舊版 11/11 成績不能拿來當新版驗收，本次 13/13 是新版本的獨立證據**。
+- **仍未正式上線**：中央 OAuth 真實 token issuance HTTP 流程/會員授權與 CSRF、Starry 批核策略、Battery Gateway Caller Secret header 協議、跨 App 真實 E2E、Production DB migration、Cloudflare 正式部署與 rollback。PR #40 仍 Draft。
