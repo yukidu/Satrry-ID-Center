@@ -19,6 +19,7 @@ on:
       - "central-id-v2/test/ios_catalog_schema_test.py"
       - "central-id-v2/test/center_migration_schema_test.py"
       - "central-id-v2/test/central-release-boundary.test.mjs"
+      - "central-id-v2/test/central-center-migration-readiness.test.mjs"
       - "central-id-v2/release/**"
       - ".github/workflows/central-id-v2.yml"
   pull_request:
@@ -35,6 +36,7 @@ on:
       - "central-id-v2/test/ios_catalog_schema_test.py"
       - "central-id-v2/test/center_migration_schema_test.py"
       - "central-id-v2/test/central-release-boundary.test.mjs"
+      - "central-id-v2/test/central-center-migration-readiness.test.mjs"
       - "central-id-v2/release/**"
       - ".github/workflows/central-id-v2.yml"
 
@@ -81,7 +83,8 @@ jobs:
           for optional in central-id-v2/test/center-catalog.test.mjs \
                           central-id-v2/test/center-route.test.mjs \
                           central-id-v2/test/center-migration-ci.test.mjs \
-                          central-id-v2/test/central-release-boundary.test.mjs; do
+                          central-id-v2/test/central-release-boundary.test.mjs \
+                          central-id-v2/test/central-center-migration-readiness.test.mjs; do
             if [[ -f "$optional" ]]; then tests+=("$optional"); fi
           done
           node --test "${tests[@]}"
