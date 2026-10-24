@@ -1,5 +1,5 @@
 {
-  "catalog_version": "2026-10-24.4",
+  "catalog_version": "2026-10-24.5",
   "authority": "M06 official Google Doc, this catalog is an implementation index not a new decision",
   "m06_url": "https://docs.google.com/document/d/10XEaZagWP_hwF1kn3JidrjYyfE3-7L9SZLND2CZdAXA/edit",
   "overview_url": "https://docs.google.com/document/d/1T-SXNilxJ9QnwHotDkFAC3OHIbZtpPo0KJ8PgcDeRLc/edit",
@@ -121,7 +121,7 @@
     }
   ],
   "production_infrastructure": {
-    "state": "provisioned_no_live_workers",
+    "state": "dark_production_workers_deployed_but_no_member_access",
     "d1_name": "starry-battery-production",
     "r2_bucket": "starry-battery-ledger-production",
     "member_rows": 0,
@@ -133,7 +133,17 @@
       "BATTERY_OVERDRAFT_ENABLED": false,
       "BATTERY_CREDIT_ENABLED": false,
       "BATTERY_ARCHIVE_ENABLED": false
-    }
+    },
+    "private_workers": [
+      "starry-battery-engine-production",
+      "starry-battery-gateway-production",
+      "starry-battery-archive-production"
+    ],
+    "zero_production_wallets_verified": true,
+    "smoke_run_id": "battery-dark-production-smoke-20261024-01",
+    "smoke_passed": 6,
+    "smoke_total": 6,
+    "production_gated": true
   },
   "activation_blockers": [
     "central private auth and revocation E2E",
