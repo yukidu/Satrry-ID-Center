@@ -1,5 +1,5 @@
 {
-  "catalog_version": "2026-10-24.3",
+  "catalog_version": "2026-10-24.4",
   "authority": "M06 official Google Doc, this catalog is an implementation index not a new decision",
   "m06_url": "https://docs.google.com/document/d/10XEaZagWP_hwF1kn3JidrjYyfE3-7L9SZLND2CZdAXA/edit",
   "overview_url": "https://docs.google.com/document/d/1T-SXNilxJ9QnwHotDkFAC3OHIbZtpPo0KJ8PgcDeRLc/edit",
@@ -84,7 +84,7 @@
         "protected central auth binding",
         "independent production gate"
       ],
-      "implementation_status": "candidate code only, no preview or production acceptance yet"
+      "implementation_status": "Preview candidate tested on isolated Cloudflare D1 14/14 (run bat-d1-e2e-overdraft-20261024-05), with runtime overdraft flag default false; live auth and Production not accepted"
     },
     {
       "id": "BAT-C01",
@@ -119,5 +119,28 @@
       "status": "decided",
       "enabled": false
     }
+  ],
+  "production_infrastructure": {
+    "state": "provisioned_no_live_workers",
+    "d1_name": "starry-battery-production",
+    "r2_bucket": "starry-battery-ledger-production",
+    "member_rows": 0,
+    "app_client_rows": 0,
+    "transaction_rows": 0,
+    "verified_on": "2026-10-24",
+    "runtime_feature_flags": {
+      "BATTERY_OPERATIONS_ENABLED": false,
+      "BATTERY_OVERDRAFT_ENABLED": false,
+      "BATTERY_CREDIT_ENABLED": false,
+      "BATTERY_ARCHIVE_ENABLED": false
+    }
+  },
+  "activation_blockers": [
+    "central private auth and revocation E2E",
+    "Starry App server key/scope enrollment",
+    "trusted gift, earned and migration credit issuers",
+    "production D1 backup/rollback validation",
+    "user deletion and R2 retention integration",
+    "full live API end-to-end smoke"
   ]
 }
