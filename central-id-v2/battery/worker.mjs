@@ -71,10 +71,19 @@ export default {
    return json({available_units:available-owed,spendable_units:available,debt_units:owed,reserved_units:wallet?.reserved_units||0,overdraft_remaining:2-Number(debt?.successful_uses||0),overdraft_in_progress:Boolean(debt?.active_reservation_id),version:wallet?.version||0});
   }
   if(isLedger){
-   let rows;
-   try{const r=await env.BATTERY_DB.prepare("SELECT entry_id,quantity_delta,created_at_ms FROM battery_ledger WHERE user_id=? ORDER BY created_at_ms DESC,entry_id DESC LIMIT 50").bind(principal.userId).all();rows=r.results||[];}
-   catch{return json({error:"database_unavailable"},503);}
-   return json({entries:rows,limit:50});
+   if(!env?.BATTERY_ARCHIVE_R2?.get)return json({error:"archive_binding_unavailable"},503);
+   const rawMs=url.searchParams.get("before_ms"),rawId=url.searchParams.get("before_id");
+   const beforeMs=rawMs===null?Number.MAX_SAFE_INTEGER:Number(rawMs),beforeId=rawId??"~";
+   if((rawId!==null&&rawMs===null)||(rawMs!==null&&(!/^[0-9]{1,16}$/.test(rawMs)||!Number.isSafeInteger(beforeMs)||beforeMs<=0))||
+      !(/^[A-Za-z0-9_-]{8,120}$/.test(beforeId)||beforeId==="~"))return json({error:"invalid_ledger_cursor"},400);
+   let entries;
+   try{
+    const recent=await env.BATTERY_DB.prepare("SELECT entry_id,quantity_delta,created_at_ms FROM battery_ledger WHERE user_id=? AND (created_at_ms<? OR (created_at_ms=? AND entry_id<?)) ORDER BY created_at_ms DESC,entry_id DESC LIMIT 50").bind(principal.userId,beforeMs,beforeMs,beforeId).all();
+    const archived=await readArchivedLedger(env.BATTERY_DB,env.BATTERY_ARCHIVE_R2,principal.userId,beforeMs,50,beforeId);
+    entries=[...(recent.results||[]),...archived.map(x=>({entry_id:x.entry_id,quantity_delta:x.quantity_delta,created_at_ms:x.created_at_ms}))].sort((x,y)=>y.created_at_ms-x.created_at_ms||y.entry_id.localeCompare(x.entry_id)).slice(0,50);
+   }catch{return json({error:"ledger_or_archive_unavailable"},503);}
+   const last=entries.at(-1);
+   return json({entries,limit:50,next_cursor:last&&entries.length===50?{before_ms:last.created_at_ms,before_id:last.entry_id}:null});
   }
   if(!env?.BATTERY_ENGINE?.fetch||typeof env.BATTERY_ENGINE_SECRET!=="string"||env.BATTERY_ENGINE_SECRET.length<32)return json({error:"battery_engine_not_ready"},503);
   if(!/^application\/json(?:;|$)/i.test(request.headers.get("Content-Type")||""))return json({error:"unsupported_content_type"},415);
