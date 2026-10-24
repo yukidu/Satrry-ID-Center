@@ -40,6 +40,19 @@ jobs:
             echo 'ERROR: Battery-only PR modifies shared or Central ID files; open a separate cross-domain PR.'
             exit 1
           fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Battery engine, Gateway and rule unit tests
+        run: node --test central-id-v2/battery/test/*.test.mjs
+      - name: Battery schema constraint tests
+        run: python3 central-id-v2/battery/test/battery_schema_test.py
+      - name: Battery isolated migration tests
+        run: python3 central-id-v2/battery/test/battery_migration_test.py
+      - name: Engine and Gateway syntax
+        run: |
+          node --check central-id-v2/battery/engine.mjs
+          node --check central-id-v2/battery/worker.mjs
       - name: Confirm no production deployment in this workflow
         run: |
           echo 'Guard only: no Cloudflare credentials, migrations, or production deployment.'
