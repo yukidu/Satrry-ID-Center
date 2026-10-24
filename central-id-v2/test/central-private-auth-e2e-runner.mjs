@@ -1,9 +1,10 @@
+import {issueCentralStarryToken} from "./private-token-issuer.mjs";
 // CENTRAL-ONLY isolated Cloudflare D1 + Service Binding acceptance harness.
 // No public route, no real member, and no real user token issuer.
 // Remove Cron trigger after a report has been recorded.
-const RUN_ID="central-auth-pr40-20261024-e2e-2";
+const RUN_ID="central-auth-pr40-20261024-e2e-3";
 const USER="__central_auth_pr40_synthetic";
-const TOKEN="T".repeat(43);
+let TOKEN="T".repeat(43);
 const SESSION="S".repeat(43);
 const encoder=new TextEncoder();
 const hex=async s=>Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",encoder.encode(s))),b=>b.toString(16).padStart(2,"0")).join("");
@@ -35,13 +36,17 @@ async function run(db,env){
   const missingCaller=await send(env,{secret:null});
   check(all,"missing independent caller secret denied",missingCaller.status===401);
   const now=Date.now();
-  const digest=await hex(TOKEN),sessionHash=await hex(SESSION);
+  const sessionHash=await hex(SESSION);
   await db.batch([
    db.prepare("INSERT INTO identity_users(user_id,created_at_ms,updated_at_ms,membership_status) VALUES(?,?,?,'approved')").bind(USER,now-10000,now-10000),
    db.prepare("INSERT INTO central_brand_authorizations(user_id,brand_scope,granted_at_ms,authorization_reference) VALUES(?,'starry',?,'sandbox-fixture-event')").bind(USER,now-10000),
    db.prepare("INSERT INTO auth_sessions(session_id_hash,user_id,brand_scope,issued_at_ms,expires_at_ms,issued_auth_version) VALUES(?,?,'central',?,?,1)").bind(sessionHash,USER,now-10000,now+600000),
-   db.prepare("INSERT INTO central_service_access_tokens(token_sha256,user_id,brand_scope,audience,issued_auth_version,issued_at_ms,expires_at_ms,issuer_reference,parent_session_sha256) VALUES(?,?,'starry','starry-battery',1,?,?,'sandbox-fixture-token',?)").bind(digest,USER,now-1000,now+120000,sessionHash)
+   db.prepare("SELECT user_id FROM identity_users WHERE user_id=?").bind(USER)
   ]);
+  const minted=await issueCentralStarryToken({CENTRAL_DB:db,CENTRAL_TOKEN_ISSUER_ENABLED:"true"},SESSION,now);
+  check(all,"Central internal issuer mints from live approved session only",minted.ok===true&&/^[A-Za-z0-9_-]{43}$/.test(minted.token||""));
+  if(!minted.ok)throw Error("issuer denied legitimate test session: "+minted.error);
+  TOKEN=minted.token;
   const ok=await send(env);
   check(all,"approved Starry token returns central-owned identity",ok.status===200&&ok.data?.active===true&&ok.data?.brand_allowed===true&&ok.data?.user_id===USER&&ok.data?.suspended===false);
   const forged=await send(env,{body:JSON.stringify({required_brand:"starry",user_id:"forged"})});
