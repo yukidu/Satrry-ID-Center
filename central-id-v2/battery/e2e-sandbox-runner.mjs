@@ -2,7 +2,7 @@
 // This Worker has no public hostname, route or exposed endpoint. Runs once per RUN_ID.
 // It calls the actual source engine with Cloudflare's real D1 binding, not a mock.
 import engine, { reserve, settle, sweepExpiredReservations, sweepExpiredAvailableLots,applyCredit } from "./engine.mjs";
-const RUN_ID="bat-d1-e2e-overdraft-20261024-02";
+const RUN_ID="bat-d1-e2e-overdraft-20261024-03";
 const BASE=Date.now() + 48*3600000; // future logical clock: production sandbox Cron can't race
 const assert=(ok, why)=>{if(!ok)throw Error(why)};
 const one=(db,sql,...args)=>db.prepare(sql).bind(...args).first();
@@ -159,6 +159,11 @@ export default {
   await db.prepare("CREATE TABLE IF NOT EXISTS e2e_test_results (run_id TEXT PRIMARY KEY NOT NULL, created_at_ms INTEGER NOT NULL, passed INTEGER NOT NULL, total INTEGER NOT NULL, report TEXT NOT NULL)").run();
   const old=await one(db,"SELECT run_id FROM e2e_test_results WHERE run_id=?",RUN_ID);
   if(old)return;
+  // A Cron may start a second invocation before the first one writes results.
+  // Claim one immutable run id transactionally; never overlap sandbox tests.
+  await db.prepare("CREATE TABLE IF NOT EXISTS e2e_run_claims (run_id TEXT PRIMARY KEY NOT NULL, claimed_at_ms INTEGER NOT NULL)").run();
+  const claim=await db.prepare("INSERT OR IGNORE INTO e2e_run_claims(run_id,claimed_at_ms) VALUES(?,?)").bind(RUN_ID,Date.now()).run();
+  if(Number(claim?.meta?.changes||0)!==1)return;
   let report;
   try{report=await main(db)}catch(e){report={run_id:RUN_ID,passed:0,total:1,checks:[{name:"fatal",pass:false,error:String(e).slice(0,250)}],production:false}}
   await db.prepare("INSERT OR IGNORE INTO e2e_test_results(run_id,created_at_ms,passed,total,report) VALUES(?,?,?,?,?)").bind(RUN_ID,Date.now(),report.passed,report.total,JSON.stringify(report)).run();
