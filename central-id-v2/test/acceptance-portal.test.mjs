@@ -43,3 +43,24 @@ test("acceptance never exposes sandbox without private bindings",async()=>{
  assert.equal(r.status,503);
  assert.equal((await r.json()).error,"sandbox_bindings_missing");
 });
+test("D1 E2E results endpoint remains read-only and pending until actual real report",async()=>{
+ const calls=[];const db={prepare(sql){calls.push(sql);return{first:async()=>null}}};
+ const r=await acceptance.fetch(makeReq("/api/acceptance/e2e"),{BATTERY_SANDBOX:db});
+ assert.equal(r.status,200);
+ const data=await r.json();
+ assert.equal(data.status,"pending");
+ assert.equal(data.total,0);
+ assert.equal(calls.length,1);
+ assert.match(calls[0],/sqlite_master/);
+});
+test("D1 E2E report reflects real stored counts without exposing report contents",async()=>{
+ const db={prepare(sql){return{first:async()=>sql.includes("sqlite_master")?{name:"e2e_test_results"}:{run_id:"e2e_demo",passed:8,total:8}}}};
+ const r=await acceptance.fetch(makeReq("/api/acceptance/e2e"),{BATTERY_SANDBOX:db});
+ assert.equal(r.status,200);
+ const data=await r.json();
+ assert.deepEqual(data,{status:"pass",passed:8,total:8});
+});
+test("E2E status cannot be forged with a POST",async()=>{
+ const r=await acceptance.fetch(makeReq("/api/acceptance/e2e","POST"),{});
+ assert.equal(r.status,405);
+});
