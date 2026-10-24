@@ -74,3 +74,46 @@ test("profile writes are authenticated, same-origin and allowlisted",async()=>{
  const wrongOrigin=await app.fetch(req("/api/v1/portal/profile",{method:"POST",headers:{Origin:"https://attacker.example","Content-Type":"application/json"},body:"{}"}));
  assert.equal(wrongOrigin.status,403);
 });
+
+test("logout cannot claim success when a central session was not revoked server-side",async()=>{
+ const validCookie="central_id_portal="+"A".repeat(43);
+ const make=()=>req("/api/v1/portal/logout",{method:"POST",headers:{Origin:base,Cookie:validCookie}});
+ const unavailable=await app.fetch(make());
+ assert.equal(unavailable.status,503);
+ assert.equal((await unavailable.json()).error,"database_unavailable");
+ assert.equal(unavailable.headers.get("Set-Cookie"),null);
+ const networkFailure=await app.fetch(make(),{CENTRAL_DB:{prepare(){throw Error("isolated D1 unavailable");}}});
+ assert.equal(networkFailure.status,503);
+ assert.equal((await networkFailure.json()).error,"logout_failed");
+ assert.equal(networkFailure.headers.get("Set-Cookie"),null);
+ let writes=0;
+ const rejected=await app.fetch(make(),{CENTRAL_DB:{prepare(sql){
+  assert.match(sql,/UPDATE auth_sessions SET revoked_at_ms/);
+  assert.match(sql,/revoked_at_ms IS NULL/);
+  return {
+   bind(_time,hash){
+    assert.match(hash,/^[a-f0-9]{64}$/);
+    return {async run(){writes++;return {success:false};}};
+   }
+  };
+ }}});
+ assert.equal(rejected.status,503);
+ assert.equal((await rejected.json()).error,"logout_failed");
+ assert.equal(writes,1);
+});
+test("confirmed logout revokes the central session and clears browser cookie",async()=>{
+ const validCookie="central_id_portal="+"A".repeat(43);
+ let revoked=false;
+ const env={CENTRAL_DB:{prepare(sql){
+  assert.match(sql,/UPDATE auth_sessions/);
+  return{bind(_when,_hash){return{run:async()=>{revoked=true;return{success:true,meta:{changes:1}}}}}};
+ }}};
+ const res=await app.fetch(req("/api/v1/portal/logout",{method:"POST",headers:{Origin:base,Cookie:validCookie}}),env);
+ assert.equal(res.status,200);
+ assert.deepEqual(await res.json(),{ok:true});
+ assert.equal(revoked,true);
+ assert.match(res.headers.get("Set-Cookie"),/central_id_portal=;.*Max-Age=0/);
+ const alreadyAbsent=await app.fetch(req("/api/v1/portal/logout",{method:"POST",headers:{Origin:base}}));
+ assert.equal(alreadyAbsent.status,200);
+ assert.match(alreadyAbsent.headers.get("Set-Cookie"),/Max-Age=0/);
+});

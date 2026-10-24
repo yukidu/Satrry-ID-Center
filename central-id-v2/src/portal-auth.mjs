@@ -173,7 +173,18 @@ export async function portalRoute(request,env){
   if(method!=="POST")return err("method_not_allowed",405);
   if(!originOk(request))return err("origin_not_allowed",403);
   const token=cookie(request,SESSION_COOKIE);
-  if(RE.test(token)&&identityDb(env))await env.CENTRAL_DB.prepare("UPDATE auth_sessions SET revoked_at_ms=? WHERE session_id_hash=?").bind(Date.now(),await hex(token)).run();
+  // Clearing only a browser cookie is not a server-side sign-out. If D1 is down,
+  // an existing session could remain valid elsewhere, so never report success.
+  if(RE.test(token)){
+   if(!identityDb(env))return err("database_unavailable",503);
+   try{
+    const result=await env.CENTRAL_DB.prepare(
+     "UPDATE auth_sessions SET revoked_at_ms=? WHERE session_id_hash=? AND revoked_at_ms IS NULL"
+    ).bind(Date.now(),await hex(token)).run();
+    if(result?.success!==true)return err("logout_failed",503);
+   }catch{return err("logout_failed",503);}
+  }
+  // No valid session cookie means there is no authenticated token to revoke.
   return success({ok:true},{'Set-Cookie':cookieFlag(SESSION_COOKIE,"",0)});
  }
  if(path==="/api/v1/portal/me"){
