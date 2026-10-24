@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS central_service_access_tokens (
  token_sha256 TEXT PRIMARY KEY NOT NULL
   CHECK(length(token_sha256)=64 AND token_sha256 NOT GLOB '*[^0-9a-f]*'),
  user_id TEXT NOT NULL REFERENCES identity_users(user_id) ON DELETE RESTRICT,
+ source_session_hash TEXT NOT NULL REFERENCES auth_sessions(session_id_hash) ON DELETE RESTRICT,
  brand_scope TEXT NOT NULL CHECK(brand_scope='starry'),
  audience TEXT NOT NULL CHECK(audience='starry-battery'),
  issued_auth_version INTEGER NOT NULL CHECK(issued_auth_version>=1),
@@ -33,6 +34,7 @@ CREATE TABLE IF NOT EXISTS central_service_access_tokens (
  CHECK(expires_at_ms>issued_at_ms AND expires_at_ms-issued_at_ms<=900000),
  CHECK(revoked_at_ms IS NULL OR revoked_at_ms>=issued_at_ms)
 );
+CREATE INDEX IF NOT EXISTS idx_central_service_tokens_session ON central_service_access_tokens(source_session_hash,revoked_at_ms);
 CREATE INDEX IF NOT EXISTS idx_central_service_tokens_owner
  ON central_service_access_tokens(user_id,revoked_at_ms);
 CREATE INDEX IF NOT EXISTS idx_central_service_tokens_expiry
