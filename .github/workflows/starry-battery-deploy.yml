@@ -30,6 +30,7 @@ jobs:
       BATTERY_TARGET: ${{ inputs.target }}
       BATTERY_D1_ID: ${{ secrets.BATTERY_D1_DATABASE_ID }}
       BATTERY_D1_NAME: ${{ vars.BATTERY_D1_NAME }}
+      BATTERY_R2_BUCKET: ${{ vars.BATTERY_R2_BUCKET }}
       CENTRAL_AUTH_WORKER: ${{ vars.CENTRAL_AUTH_WORKER }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_BATTERY }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -48,6 +49,7 @@ jobs:
           test "$SCHEMA_READY" = "true" || { echo "Dedicated Battery D1 schema not approved"; exit 1; }
           test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
           test -n "$BATTERY_D1_ID" && test -n "$BATTERY_D1_NAME"
+          test -n "$BATTERY_R2_BUCKET" || { echo "Isolated Battery R2 bucket is not configured"; exit 1; }
           test "${#BATTERY_ENGINE_SECRET}" -ge 32 || { echo "Battery private engine secret not configured"; exit 1; }
           test "${#BATTERY_CREDIT_ISSUER_SECRET}" -ge 32 || { echo "Privileged Battery credit issuer secret not configured"; exit 1; }
           if [ "$BATTERY_TARGET" = production ]; then
@@ -70,5 +72,7 @@ jobs:
         run: npx --yes wrangler@4 deploy --config central-id-v2/battery/.wrangler.gateway.generated.json
       - name: Set Gateway-to-Engine secret
         run: printf '%s' "$BATTERY_ENGINE_SECRET" | npx --yes wrangler@4 secret put BATTERY_ENGINE_SECRET --config central-id-v2/battery/.wrangler.gateway.generated.json
+      - name: Deploy separately disabled-by-default Battery R2 archiver
+        run: npx --yes wrangler@4 deploy --config central-id-v2/battery/.wrangler.archive.generated.json
       - name: Deployment evidence and smoke reminder
         run: echo "Record deployed SHA, preview URL, dedicated D1 migration evidence, actual Auth contract and healthy Gateway; Production is not accepted by this step alone."
