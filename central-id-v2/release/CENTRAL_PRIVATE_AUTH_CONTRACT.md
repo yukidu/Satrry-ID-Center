@@ -45,3 +45,12 @@
 5. 再加入專用 CI 合約驗收及 D1 回復計畫，合併 main，**另行核准實際 Production 部署**。
 
 最後更新：2026-10-24。此文件為工程候選，不代表 Production。
+
+
+## 2026-10-24 最新安全加強：Token 必須綁定可撤銷的中央 Session
+
+- 以 0006 目前正式候選 DDL 內的 `source_session_hash NOT NULL REFERENCES auth_sessions(session_id_hash)` 為**唯一規格**；已刪除重複的 0007 草案。請不要沿用先前 0006 沒有 `source_session_hash` 的舊隔離 D1 作為最新版驗收。
+- `src/private-introspection.mjs` 會在中央 D1 JOIN 原登入 Session 並要求：`brand_scope='central'`、未撤銷、未逾期、Session `issued_auth_version` 與 Token/中央 user 版本一致；因此登出中央 Session 後所衍生的短期 Token 應立即拒絕。身分、品牌授權、停權與核准狀態繼續逐次重驗。
+- 新增 `src/private-token-issuer.mjs`：**僅供內部可信任中央 Controller 呼叫，不是 HTTP Endpoint**；`CENTRAL_TOKEN_ISSUER_ENABLED` 缺失/非 `"true"` 時預設拒絕。它不接受呼叫者提供的 `user_id` 或 Email，以 `auth_sessions`、`identity_users` 與 `central_brand_authorizations` 的即時條件 `INSERT ... SELECT ... RETURNING` 原子發放 5 分鐘內 opaque token，資料庫只存 SHA-256。
+- **尚未開放 Token 發放給真實會員**：中央 Google/Apple OAuth portal 連接、CSRF／同源檢查、會員明確授權 Starry、App 專屬回呼與短期 Token 安全交付都尚需單獨實作與正式審核，不能直接將此內部函式暴露到瀏覽器或不可信任 App。
+- 中央 CI 已新增 issuer 的 fail-closed、SQL 條件與 DB schema/check tests；Cloudflare 新建全新中央 D1 `central-auth-session-pr40-isolated-20261024`，0004 + 最新 0006 在全新 D1 成功執行，不碰 Production/Battery。新版私有 Workers 已上傳、公開入口關閉、Cron E2E 讀回結果仍須另行確認；**前次 11/11 PASS 是舊 Schema/Worker 版本的歷史結果，不能自動算成 Session 綁定版 11/11 PASS**。
