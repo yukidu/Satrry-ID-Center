@@ -22,8 +22,8 @@ Starry App backend → authenticated Battery Gateway → private Battery Engine 
 6. Keep most recent year of detailed ledger in D1; reconcile then archive older history in Starry R2 while preserving queryability. R2 archive is not a new central D1 backup.
 7. Preview and Production credentials, D1 and bindings are isolated. Versioning must be additive; breaking changes require opt-in version, App-by-App compatibility tests and rollback.
 
-## Explicitly disabled pending owner clarification
-**Negative balance twice, unlimited amount**: M06 documents this as ambiguous. Do not allow negative balances or remove CHECK >= 0 / quantity safety bounds until “two times”, reset period, debt recovery, extreme numeric limits and abuse controls are formally decided. Any eventual allowance must be centralized and concurrency-safe, and only committed usage may count toward it.
+## Approved overdraft contract — implementation candidate, Production disabled
+The product decision is now explicit: two **successful** AI usage debits with insufficient balance (not two debt cycles), shared across every Starry App for the same central user_id; at most one active overdraft task per member; commit consumes an opportunity; release, failed work and 180-second timeout consume none. Subsequent grants/credits repay debt first, then create eligible positive lots. Immediately after the debt is completely repaid, restore two overdraft opportunities. No business cap per overdraft operation, but integer-safe numeric range, auth and anti-abuse controls remain mandatory. This branch stores debt separately in `battery_overdraft_accounts` while preserving nonnegative lot CHECKs. `applyCredit` is internal and currently not wired to production grants. **No Production overdraft launch until real D1 E2E and Auth/credit integrations are accepted.**
 
 ## Required release gates (NOT satisfied by this document)
 - Compare this contract to actual Gateway routes and JSON payloads before treating it as machine-enforced OpenAPI; publish an explicit OpenAPI schema and conformance tests.
@@ -32,4 +32,4 @@ Starry App backend → authenticated Battery Gateway → private Battery Engine 
 - Verify real central OAuth/introspection and provision per-App credentials securely; run each Starry App contract test and list upgrades.
 - Check CI, sandbox Worker bindings, D1 migrations, health monitoring and rollback. User acceptance before production merge/deploy.
 
-Implementation tracking: PR #34, Issue #35. This file is a safe initial contract baseline only, **not evidence of completed Engine/Schema/API changes or deployment**.
+Implementation tracking: isolated Battery Draft PR #37 (ported from mixed PR #34), Issue #35. This file is a safe initial contract baseline only, **not evidence of completed Engine/Schema/API changes or deployment**.
