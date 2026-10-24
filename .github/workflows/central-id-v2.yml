@@ -19,6 +19,7 @@ on:
       - "central-id-v2/test/ios_catalog_schema_test.py"
       - "central-id-v2/test/center_migration_schema_test.py"
       - "central-id-v2/test/private_introspection_schema_test.py"
+      - "central-id-v2/test/central-private-auth-e2e-runner.mjs"
       - "central-id-v2/test/central-release-boundary.test.mjs"
       - "central-id-v2/release/**"
       - ".github/workflows/central-id-v2.yml"
@@ -36,6 +37,7 @@ on:
       - "central-id-v2/test/ios_catalog_schema_test.py"
       - "central-id-v2/test/center_migration_schema_test.py"
       - "central-id-v2/test/private_introspection_schema_test.py"
+      - "central-id-v2/test/central-private-auth-e2e-runner.mjs"
       - "central-id-v2/test/central-release-boundary.test.mjs"
       - "central-id-v2/release/**"
       - ".github/workflows/central-id-v2.yml"
@@ -88,6 +90,7 @@ jobs:
             if [[ -f "$optional" ]]; then tests+=("$optional"); fi
           done
           node --test "${tests[@]}"
+          node --check central-id-v2/test/central-private-auth-e2e-runner.mjs
       - name: Central D1 schema tests only
         shell: bash
         run: |
