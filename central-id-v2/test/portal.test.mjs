@@ -90,7 +90,12 @@ test("logout cannot claim success when a central session was not revoked server-
  const rejected=await app.fetch(make(),{CENTRAL_DB:{prepare(sql){
   assert.match(sql,/UPDATE auth_sessions SET revoked_at_ms/);
   assert.match(sql,/revoked_at_ms IS NULL/);
-  return{bind(_time,hash){assert.match(hash,/^[a-f0-9]{64}$/);return{run:async()=>{writes++;return {success:false}};}}};
+  return {
+   bind(_time,hash){
+    assert.match(hash,/^[a-f0-9]{64}$/);
+    return {async run(){writes++;return {success:false};}};
+   }
+  };
  }}});
  assert.equal(rejected.status,503);
  assert.equal((await rejected.json()).error,"logout_failed");
