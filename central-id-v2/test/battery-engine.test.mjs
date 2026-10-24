@@ -5,18 +5,31 @@ import engine,{reserve,settle} from "../battery/engine.mjs";
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
 const c={user_id:"member_123",app_id:"starry_echo",operation_id:"operation_123",quantity:4};
 function dbWith({existing=null,lots=[{lot_id:"early",available_units:2,expires_at_ms:100000},{lot_id:"late",available_units:7,expires_at_ms:200000}],wallet=9,allocations=[]}={}){
- const calls=[], batches=[];
- return {calls,batches,prepare(sql){return{bind(...args){const state={sql,args};calls.push(state);
- return {...state,async first(){
-   if(sql.includes("FROM battery_reservations WHERE"))return existing;
-   if(sql.includes("SELECT available_units FROM battery_wallets"))return wallet===null?null:{available_units:wallet};
-   throw Error("unexpected first "+sql);
- },async all(){
-   if(sql.includes("FROM battery_lots WHERE"))return {results:lots};
-   if(sql.includes("FROM battery_reservation_allocations a JOIN battery_lots"))return {results:allocations};
-   throw Error("unexpected all "+sql);
- }};
- }},async batch(ops){batches.push(ops);return ops.map(()=>({success:true}))}};
+ const calls=[],batches=[];
+ return {
+  calls,batches,
+  prepare(sql){
+   return {
+    bind(...args){
+     const state={sql,args};calls.push(state);
+     return {
+      ...state,
+      async first(){
+       if(sql.includes("FROM battery_reservations WHERE"))return existing;
+       if(sql.includes("SELECT available_units FROM battery_wallets"))return wallet===null?null:{available_units:wallet};
+       throw Error("unexpected first "+sql);
+      },
+      async all(){
+       if(sql.includes("FROM battery_lots WHERE"))return {results:lots};
+       if(sql.includes("FROM battery_reservation_allocations a JOIN battery_lots"))return {results:allocations};
+       throw Error("unexpected all "+sql);
+      }
+     };
+    }
+   };
+  },
+  async batch(ops){batches.push(ops);return ops.map(()=>({success:true}));}
+ };
 }
 const json=async r=>({code:r.status,data:await r.json()});
 test("reserve picks FEFO source lots, issues one atomic D1 batch",async()=>{
