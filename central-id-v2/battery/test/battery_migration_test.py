@@ -50,11 +50,25 @@ except sqlite3.IntegrityError:
     pass
 else:
     raise AssertionError("third overdraft allowed")
-db.execute("INSERT INTO battery_credit_receipts VALUES('grant_12345678','member_alpha',9,4,5,1)")
+db.execute("INSERT INTO battery_credit_receipts VALUES('grant_12345678','member_alpha',9,4,5,1,'gift',123456)")
 try:
-    db.execute("INSERT INTO battery_credit_receipts VALUES('grant_12345678','member_alpha',9,4,5,1)")
+    db.execute("INSERT INTO battery_credit_receipts VALUES('grant_12345678','member_alpha',9,4,5,1,'gift',123456)")
 except sqlite3.IntegrityError:
     pass
 else:
     raise AssertionError("credit replay accepted")
 print("PASS: legacy reservation migration, unique overdraft seat, debt/counter limits and credit idempotency")
+
+# Upgrade legacy receipt metadata in a database that already used overdraft v1.
+legacy_db = sqlite3.connect(":memory:")
+legacy_db.executescript("""
+CREATE TABLE battery_credit_receipts (
+ credit_id TEXT PRIMARY KEY, user_id TEXT, quantity INTEGER,
+ repaid_units INTEGER, lot_units INTEGER, created_at_ms INTEGER
+);
+INSERT INTO battery_credit_receipts VALUES('credit_old_123','member_alpha',7,2,5,123);
+""")
+legacy_db.executescript((root / "migrations/0002_credit_receipt_metadata.sql").read_text(encoding="utf-8"))
+record = legacy_db.execute("SELECT source,expires_at_ms FROM battery_credit_receipts WHERE credit_id='credit_old_123'").fetchone()
+assert record == ("legacy_unverified",0), record
+print("PASS: legacy receipt v2 upgrade retains historical entries with unverified tags")
