@@ -1,28 +1,95 @@
-name: Central ID v2 safe public shell
+name: Central ID v2 isolated CI
 
+# Central member ID owns identity, portal, session, center and central D1.
+# Battery owns central-id-v2/battery/** and battery-specific tests.
+# Never use a catch-all directory filter here: a Battery-only change
+# must NOT invoke the Central CI job or release lifecycle.
 on:
   push:
     paths:
-      - "central-id-v2/**"
+      - "central-id-v2/src/**"
+      - "central-id-v2/echo-adapter/**"
+      - "central-id-v2/migrations/**"
+      - "central-id-v2/test/compat.test.mjs"
+      - "central-id-v2/test/echo-adapter.test.mjs"
+      - "central-id-v2/test/echo-tickets.test.mjs"
+      - "central-id-v2/test/index.test.mjs"
+      - "central-id-v2/test/portal*.test.mjs"
+      - "central-id-v2/test/center*.test.mjs"
+      - "central-id-v2/test/ios_catalog_schema_test.py"
+      - "central-id-v2/test/center_migration_schema_test.py"
+      - "central-id-v2/test/central-release-boundary.test.mjs"
+      - "central-id-v2/release/**"
       - ".github/workflows/central-id-v2.yml"
   pull_request:
     paths:
-      - "central-id-v2/**"
+      - "central-id-v2/src/**"
+      - "central-id-v2/echo-adapter/**"
+      - "central-id-v2/migrations/**"
+      - "central-id-v2/test/compat.test.mjs"
+      - "central-id-v2/test/echo-adapter.test.mjs"
+      - "central-id-v2/test/echo-tickets.test.mjs"
+      - "central-id-v2/test/index.test.mjs"
+      - "central-id-v2/test/portal*.test.mjs"
+      - "central-id-v2/test/center*.test.mjs"
+      - "central-id-v2/test/ios_catalog_schema_test.py"
+      - "central-id-v2/test/center_migration_schema_test.py"
+      - "central-id-v2/test/central-release-boundary.test.mjs"
+      - "central-id-v2/release/**"
       - ".github/workflows/central-id-v2.yml"
 
 permissions:
   contents: read
 
+concurrency:
+  group: central-id-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  public-shell-tests:
+  central-id-unit-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Unit and security gate
-        run: node --test central-id-v2/test/*.test.mjs
-      - name: iOS two-developer account D1 partition tests
-        run: python3 central-id-v2/test/ios_catalog_schema_test.py
+      - name: Ensure Central PR does not include Battery-owned files
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --name-only "origin/$GITHUB_BASE_REF"...HEAD > /tmp/central-id-pr-changed-files.txt
+          if grep -E '^(central-id-v2/battery/|central-id-v2/test/battery[^/]*|central-id-v2/acceptance/)' /tmp/central-id-pr-changed-files.txt; then
+            echo "::error::Central ID PR contains Battery-owned or legacy mixed-acceptance files. Split the changes into service-specific PRs."
+            exit 1
+          fi
+      - name: Central ID only (never execute Battery Engine tests)
+        shell: bash
+        run: |
+          set -euo pipefail
+          tests=(
+            central-id-v2/test/compat.test.mjs
+            central-id-v2/test/echo-adapter.test.mjs
+            central-id-v2/test/echo-tickets.test.mjs
+            central-id-v2/test/index.test.mjs
+            central-id-v2/test/portal.test.mjs
+            central-id-v2/test/portal-signup.test.mjs
+          )
+          for optional in central-id-v2/test/center-catalog.test.mjs \
+                          central-id-v2/test/center-route.test.mjs \
+                          central-id-v2/test/center-migration-ci.test.mjs \
+                          central-id-v2/test/central-release-boundary.test.mjs; do
+            if [[ -f "$optional" ]]; then tests+=("$optional"); fi
+          done
+          node --test "${tests[@]}"
+      - name: Central D1 schema tests only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 central-id-v2/test/ios_catalog_schema_test.py
+          if [[ -f central-id-v2/test/center_migration_schema_test.py ]]; then
+            python3 central-id-v2/test/center_migration_schema_test.py
+          fi

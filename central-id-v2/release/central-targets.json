@@ -1,0 +1,46 @@
+{
+  "version": "2026-10-24-central-id",
+  "ownership": "central-membership-id-only",
+  "branch_policy": {
+    "feature_prefixes": [
+      "feat/central-id-",
+      "fix/central-",
+      "chore/central-id-"
+    ],
+    "legacy_mixed_pr": 34,
+    "never_merge_mixed_pr_directly": true
+  },
+  "production": {
+    "worker": "hglobal-central-id-v2",
+    "d1_binding": "CENTRAL_DB",
+    "d1_id": "ca08ee86-7b39-46fe-a578-611d1bee312c",
+    "legacy_binding": "LEGACY_AUTH_DB",
+    "legacy_d1_id": "01195c92-555e-4816-bddc-5b8cb2e795db",
+    "github_environment": "production-central-id",
+    "concurrency_group": "production-central-id"
+  },
+  "preview": {
+    "worker": "hglobal-central-id-v2-preview",
+    "d1_binding": "CENTRAL_DB",
+    "d1_id": "bf911410-580f-4b5a-975c-28f77285fabb"
+  },
+  "forbidden": {
+    "worker_prefixes": [
+      "starry-battery-"
+    ],
+    "repo_prefixes": [
+      "central-id-v2/battery/",
+      "central-id-v2/test/battery"
+    ],
+    "d1_ids": [
+      "4695a956-64c1-4635-b559-74e6298919d9"
+    ]
+  },
+  "audit_notes": [
+    "Central production has live LEGACY_AUTH_DB read-only dependency; never migrate it as part of a central release.",
+    "The current shared acceptance Worker has both Central and Battery D1 bindings; it is a legacy isolation gap, not a target for Central production releases.",
+    "The Battery production Worker and dedicated R2 bucket were not proven by this audit. Do not infer they exist.",
+    "Do not use the shared CLOUDFLARE_API_TOKEN for automated production deployment without verifying least privilege."
+  ],
+  "production_ready_automated": false
+}
