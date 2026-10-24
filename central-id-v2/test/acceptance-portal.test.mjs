@@ -14,6 +14,11 @@ test("acceptance page is explicit sandbox UI and includes 30 official centers",a
  assert.doesNotMatch(html,/EC-002/);
  assert.match(html,/不會變更任何真實會員資料/);
  assert.match(html,/模擬/);
+ assert.match(html,/id="ai-run"/);
+ assert.match(html,/id="ai-outcome"/);
+ assert.doesNotMatch(html,/id="reserve"/);
+ assert.doesNotMatch(html,/id="commit"/);
+ assert.doesNotMatch(html,/id="release"/);
 });
 test("acceptance refuses all writes",async()=>{
  const r=await acceptance.fetch(makeReq("/api/acceptance/status","POST"),{});
