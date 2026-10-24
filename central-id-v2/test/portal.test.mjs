@@ -12,11 +12,16 @@ test("central homepage presents real login entry and private dashboard redirects
  assert.match(h,/href="\/login">Google 會員登入/);
  const login=await app.fetch(req("/login"));
  assert.equal(login.status,200);
- assert.match(await login.text(),/id="google-button"/);
+ const loginHtml=await login.text();
+ assert.match(loginHtml,/id="google-button"/);
+ assert.doesNotMatch(loginHtml,/starry|繁星|echo|id\.starry\.phd/i);
  assert.match(login.headers.get("Content-Security-Policy"),/accounts.google.com\/gsi\/client/);
  const dashboard=await app.fetch(req("/dashboard"));
  assert.equal(dashboard.status,303);
  assert.equal(dashboard.headers.get("Location"),base+"/login");
+ const settings=await app.fetch(req("/me/settings"));
+ assert.equal(settings.status,303);
+ assert.equal(settings.headers.get("Location"),base+"/login");
  const anon=await app.fetch(req("/api/v1/portal/me"));
  assert.equal(anon.status,401);
 });
@@ -47,7 +52,8 @@ test("challenge cookie is random, secure, HttpOnly, SameSite Lax",async()=>{
  assert.equal(a.status,200);
  const data=await a.json();
  assert.equal(data.nonce.length,43);
- assert.match(data.google_client_id,/apps.googleusercontent.com$/);
+ assert.equal(data.google_client_id,"791614645185-vbaqqbnr463r1vi4ga41uh73s7eg0gv5.apps.googleusercontent.com");
+ assert.notEqual(data.google_client_id,"661055525630-ndcq5gtr16h7rqqprlqqkkvineea87lc.apps.googleusercontent.com");
  assert.match(a.headers.get("Set-Cookie"),/HttpOnly; Secure; SameSite=Lax/);
  const b=await app.fetch(req("/api/v1/portal/challenge"),env);
  assert.notEqual((await b.json()).nonce,data.nonce);
@@ -62,11 +68,9 @@ test("invalid login attempt cannot create member session or receive admin privil
  assert.equal((await bad.json()).error,"consent_required");
 });
 
-test("explicit invalid central client configuration fails closed before database writes",async()=>{
- for(const value of ["",null,"attacker",42]){
-  const env={HGLOBAL_GOOGLE_CLIENT_ID:value,CENTRAL_DB:{prepare(){throw Error("no writes");}}};
-  const r=await app.fetch(req("/api/v1/portal/challenge"),env);
-  assert.equal(r.status,503);
-  assert.equal((await r.json()).error,"oauth_configuration_invalid");
- }
+test("profile writes are authenticated, same-origin and allowlisted",async()=>{
+ const unauth=await app.fetch(req("/api/v1/portal/profile",{method:"POST",headers:{Origin:base,"Content-Type":"application/json"},body:JSON.stringify({field:"display_name",value:"someone",version:1})}));
+ assert.equal(unauth.status,503); // Missing D1 is fail closed.
+ const wrongOrigin=await app.fetch(req("/api/v1/portal/profile",{method:"POST",headers:{Origin:"https://attacker.example","Content-Type":"application/json"},body:"{}"}));
+ assert.equal(wrongOrigin.status,403);
 });

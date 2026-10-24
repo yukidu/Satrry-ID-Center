@@ -24,6 +24,8 @@ test("homepage contains honest unavailable notice and headers",async()=>{
   assert.equal(res.status,200);
   assert.match(html,/目前開放的是新版官方資訊頁/);
   assert.match(html,/中央會員 ID/);
+  assert.doesNotMatch(html,/starry|繁星|echo|id\.starry\.phd/i);
+  assert.match(html,/href="\/login">Google 會員登入/);
   assert.equal(res.headers.get("X-Robots-Tag"),"noindex, nofollow, noarchive");
   assert.match(res.headers.get("Content-Security-Policy"),/form-action 'none'/);
 });
@@ -48,5 +50,7 @@ test("no old-site redirect and no indexing",async()=>{
 test("only read-only public help available",async()=>{
   const res=await req("/api/v1/public/help");
   assert.equal(res.status,200);
-  assert.equal((await res.json()).phase,"public-information");
+  const help=await res.json();
+  assert.equal(help.phase,"member-portal-partial");
+  assert.doesNotMatch(JSON.stringify(help),/starry|繁星|echo|id\.starry\.phd/i);
 });

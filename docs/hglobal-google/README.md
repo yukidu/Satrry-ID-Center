@@ -161,3 +161,9 @@ Cloud IAM 與使用者 Google 資料授權分開：WIF 不會自動授權 Gmail 
 ## 正式切換前人工驗收
 
 2026-10-24：帳號持有人明確回報「登出、重新登入與原本 Echo 登入都正常」。因此 Preview 真實 Google 登入、登出／重新登入與原本 Echo 登入回歸記為人工驗收通過。尚未證明 Production 新 Client ID 登入成功，也未宣稱一般 ChatGPT 管理連接完成。正式切換僅限中央 portal OAuth client，保留 Starry/Echo audience 與既有資料庫 bindings。
+
+## 與最新正式版本整合（2026-10-24）
+
+重新讀取 main 及正式 Worker 原始碼後確認：main commit 4101e30 已獨立完成 H-Global Client ID 分離，62394e1 增加會員資料功能；正式 Worker 也直接使用新 Client ID，compat.mjs 保留 Starry client。因此「未設定環境變數即代表未切換」的先前判斷不成立，以此項原始碼證據更正。PR #31 改為僅合併管理文件及唯讀盤點工具，保留 main 現行程式與測試，不部署舊版。
+
+帳號持有人已回報 Preview 登出、重新登入與原本 Echo 登入皆正常。正式站新 Client ID 的瀏覽器重新登入仍待帳號持有人確認。一般 ChatGPT 管理連接仍未完成。
