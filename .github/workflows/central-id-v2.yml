@@ -80,6 +80,7 @@ jobs:
           )
           for optional in central-id-v2/test/center-catalog.test.mjs \
                           central-id-v2/test/center-route.test.mjs \
+                          central-id-v2/test/center-migration-ci.test.mjs \
                           central-id-v2/test/central-release-boundary.test.mjs; do
             if [[ -f "$optional" ]]; then tests+=("$optional"); fi
           done
