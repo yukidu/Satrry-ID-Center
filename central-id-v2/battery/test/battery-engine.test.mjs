@@ -196,7 +196,7 @@ test("missing privileged issuer secret prevents credit operations",async()=>{
 });
 test("credit issuer rejects forged fields, expired credits and missing permissions",async()=>{
  const headers={"Content-Type":"application/json","X-Battery-Credit-Authorization":"Bearer "+"i".repeat(40)};
- const env={BATTERY_DB:dbWith({wallet:0}),BATTERY_CREDIT_ISSUER_SECRET:"i".repeat(40)};
+ const env={BATTERY_DB:dbWith({wallet:0}),BATTERY_CREDIT_ISSUER_SECRET:"i".repeat(40),BATTERY_CREDIT_ENABLED:"true"};
  const send=data=>engine.fetch(new Request("https://battery-engine.internal/v1/credit",{method:"POST",headers,body:JSON.stringify(data)}),env);
  const p={credit_id:"grant_secure_789",user_id:c.user_id,quantity:7,source:"gift",expires_at_ms:Date.now()+86400000};
  assert.equal((await send({...p,admin:true})).status,400);
