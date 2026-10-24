@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS battery_app_rate_limits (
  request_count INTEGER NOT NULL DEFAULT 0 CHECK(request_count>=0),
  PRIMARY KEY (app_id,window_start_ms)
 );
+CREATE INDEX IF NOT EXISTS idx_battery_app_rate_limits_cleanup ON battery_app_rate_limits(window_start_ms);
 CREATE TABLE IF NOT EXISTS battery_wallets (
  user_id TEXT PRIMARY KEY NOT NULL,
  available_units INTEGER NOT NULL DEFAULT 0 CHECK(available_units>=0),
@@ -30,6 +31,7 @@ CREATE TABLE IF NOT EXISTS battery_lots (
  reserved_units INTEGER NOT NULL DEFAULT 0 CHECK(reserved_units>=0)
 );
 CREATE INDEX IF NOT EXISTS idx_battery_lots_fefo ON battery_lots(user_id,expires_at_ms,lot_id);
+CREATE INDEX IF NOT EXISTS idx_battery_lots_expiry ON battery_lots(expires_at_ms,lot_id);
 CREATE TABLE IF NOT EXISTS battery_reservations (
  reservation_id TEXT PRIMARY KEY,
  user_id TEXT NOT NULL REFERENCES battery_wallets(user_id),
@@ -40,6 +42,7 @@ CREATE TABLE IF NOT EXISTS battery_reservations (
  deadline_at_ms INTEGER NOT NULL,
  UNIQUE(app_id,operation_id)
 );
+CREATE INDEX IF NOT EXISTS idx_battery_reservations_timeout ON battery_reservations(state,deadline_at_ms);
 CREATE TABLE IF NOT EXISTS battery_reservation_allocations (
  reservation_id TEXT NOT NULL REFERENCES battery_reservations(reservation_id),
  lot_id TEXT NOT NULL REFERENCES battery_lots(lot_id),
