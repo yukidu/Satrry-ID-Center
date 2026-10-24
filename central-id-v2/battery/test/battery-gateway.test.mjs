@@ -9,6 +9,7 @@ const auth=(headers={})=>new Request(base+"/v1/battery/wallet",{headers:{"X-Batt
 function makeEnv(expectedHash,scopes="balance:read",quotaAllowed=true,centralResponse={active:true,brand_allowed:true,user_id:"user_123",suspended:false},centralStatus=200){
  let count=0;
  return {get calls(){return count;},
+  CENTRAL_AUTH_CALLER_SECRET:"z".repeat(48),
   BATTERY_DB:{prepare(sql){return{bind(...args){return{async all(){
     if(sql.includes("FROM battery_ledger")||sql.includes("FROM battery_archive_index"))return {results:[]};
     throw Error("unexpected archive SQL "+sql);
@@ -20,7 +21,7 @@ function makeEnv(expectedHash,scopes="balance:read",quotaAllowed=true,centralRes
     if(sql.includes("battery_overdraft_accounts"))return {debt_units:3,successful_uses:1,active_reservation_id:null};
     throw Error("unexpected SQL");
   }}}}}},
-  CENTRAL_AUTH_VERIFY:{async fetch(r){assert.equal(r.headers.get("X-Battery-Caller"),"starry");return new Response(JSON.stringify(centralResponse),{status:centralStatus})}}
+  CENTRAL_AUTH_VERIFY:{async fetch(r){assert.equal(r.headers.get("X-Battery-Caller"),"starry");assert.equal(r.headers.get("X-Central-Service-Auth"),"z".repeat(48));return new Response(JSON.stringify(centralResponse),{status:centralStatus})}}
  };
 }
 test("all private routes are closed without central verifier or registered app",async()=>{
@@ -81,7 +82,8 @@ test("Central verifier must explicitly approve active Starry identity, otherwise
   {active:true,brand_allowed:true,user_id:"user_123",suspended:true},
   {active:"true",brand_allowed:true,user_id:"user_123",suspended:false},
   {active:true,brand_allowed:true,suspended:false},
-  {active:true,brand_allowed:true,user_id:"../../other_user",suspended:false}
+  {active:true,brand_allowed:true,user_id:"../../other_user",suspended:false},
+  {active:true,brand_allowed:true,user_id:"user_123"}
  ]){
   const env=makeEnv(appHash,"balance:read",true,fake);
   const res=await gateway.fetch(auth(),env);
@@ -116,4 +118,12 @@ test("ledger requires private archived history binding and strictly verifies cur
  const malformed=await gateway.fetch(req("/v1/battery/ledger?before_ms=abc"),env);
  assert.equal(malformed.status,400);
  assert.equal((await malformed.json()).error,"invalid_ledger_cursor");
+});
+
+test("Central service-to-service caller secret is mandatory even with a valid App token",async()=>{
+ const env=makeEnv(await hash(token));
+ delete env.CENTRAL_AUTH_CALLER_SECRET;
+ const r=await gateway.fetch(auth(),env);
+ assert.equal(r.status,503);
+ assert.equal((await r.json()).error,"dependency_unavailable");
 });
