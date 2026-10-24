@@ -39,6 +39,7 @@ async function verifiedPrincipal(request,env,needed){
    method:"POST",headers:{"Authorization":"Bearer "+userToken,"Content-Type":"application/json","X-Battery-Caller":"starry"},
    body:JSON.stringify({required_brand:"starry"})}));
  }catch{return {error:"central_auth_unavailable",status:503};}
+ if(reply.status>=500)return {error:"central_auth_unavailable",status:503};
  if(!reply.ok)return {error:"central_auth_rejected",status:403};
  let data;
  try{data=await reply.json();}catch{return {error:"invalid_central_auth_response",status:503};}
