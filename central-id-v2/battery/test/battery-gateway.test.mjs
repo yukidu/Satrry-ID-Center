@@ -14,6 +14,7 @@ function makeEnv(expectedHash,scopes="balance:read",quotaAllowed=true){
     if(sql.includes("battery_app_clients"))return args[0]==="starry_echo"&&args[1]===expectedHash?{app_id:"starry_echo",scopes}:null;
     if(sql.includes("battery_app_rate_limits"))return quotaAllowed?{request_count:1}:null;
     if(sql.includes("battery_wallets"))return {available_units:15,reserved_units:5,version:4};
+    if(sql.includes("battery_overdraft_accounts"))return {debt_units:3,successful_uses:1,active_reservation_id:null};
     throw Error("unexpected SQL");
   }}}}}},
   CENTRAL_AUTH_VERIFY:{async fetch(r){assert.equal(r.headers.get("X-Battery-Caller"),"starry");return new Response(JSON.stringify({active:true,brand_allowed:true,user_id:"user_123",suspended:false}),{status:200})}}
@@ -28,7 +29,7 @@ test("valid registered Starry app can read only verified user's balance",async()
  const env=makeEnv(await hash(token));
  const response=await gateway.fetch(auth(),env);
  assert.equal(response.status,200);
- assert.deepEqual(await response.json(),{available_units:15,reserved_units:5,version:4});
+ assert.deepEqual(await response.json(),{available_units:12,spendable_units:15,debt_units:3,reserved_units:5,overdraft_remaining:1,overdraft_in_progress:false,version:4});
 });
 test("forged app token or missing scope cannot reach member wallet",async()=>{
  const env=makeEnv(await hash("different"),"balance:read");
