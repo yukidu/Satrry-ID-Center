@@ -1,8 +1,8 @@
 // Private Cloudflare Cron acceptance runner. Test-only: NEVER deploy to Production D1.
 // This Worker has no public hostname, route or exposed endpoint. Runs once per RUN_ID.
 // It calls the actual source engine with Cloudflare's real D1 binding, not a mock.
-import engine, { reserve, settle, sweepExpiredReservations, sweepExpiredAvailableLots } from "./engine.mjs";
-const RUN_ID="bat-d1-e2e-20261024-01";
+import engine, { reserve, settle, sweepExpiredReservations, sweepExpiredAvailableLots,applyCredit } from "./engine.mjs";
+const RUN_ID="bat-d1-e2e-overdraft-20261024-02";
 const BASE=Date.now() + 48*3600000; // future logical clock: production sandbox Cron can't race
 const assert=(ok, why)=>{if(!ok)throw Error(why)};
 const one=(db,sql,...args)=>db.prepare(sql).bind(...args).first();
@@ -21,6 +21,8 @@ async function clean(db,u){
   db.prepare("DELETE FROM battery_ledger WHERE user_id=?").bind(u),
   db.prepare("DELETE FROM battery_reservations WHERE user_id=?").bind(u),
   db.prepare("DELETE FROM battery_lots WHERE user_id=?").bind(u),
+  db.prepare("DELETE FROM battery_credit_receipts WHERE user_id=?").bind(u),
+  db.prepare("DELETE FROM battery_overdraft_accounts WHERE user_id=?").bind(u),
   db.prepare("DELETE FROM battery_wallets WHERE user_id=?").bind(u)
  ]);
 }
@@ -87,6 +89,62 @@ async function main(db){
   const n=await one(db,"SELECT COUNT(*) AS n FROM battery_reservations WHERE user_id=?",u);
   assert(results.filter(x=>x.status===200).length===1&&results.filter(x=>x.status===409).length===1,"overbooking results "+JSON.stringify(results));
   assert(w.available_units===1&&w.reserved_units===5&&n.n===1,"double-spend wallet "+JSON.stringify({w,n}));
+ }));
+ checks.push(await testOn(db,"overdraft_first",async u=>{
+  await seed(db,u,[5],[BASE+500000]);
+  const c={...cid(u,"overdraft_first"),quantity:10};
+  const res=await call(await reserve(db,c,BASE));
+  assert(res.status===200&&res.data.funded_units===5&&res.data.overdraft_units===5,"first overdraft reserve "+JSON.stringify(res));
+  const pending=await one(db,"SELECT debt_units,successful_uses,active_reservation_id FROM battery_overdraft_accounts WHERE user_id=?",u);
+  assert(pending.debt_units===0&&pending.successful_uses===0&&Boolean(pending.active_reservation_id),"reserve consumed debt or chance");
+  const cm=await call(await settle(db,c,"commit",BASE+1000));assert(cm.status===200,"first overdraft commit "+JSON.stringify(cm));
+  const a=await one(db,"SELECT debt_units,successful_uses,active_reservation_id FROM battery_overdraft_accounts WHERE user_id=?",u);
+  assert(a.debt_units===5&&a.successful_uses===1&&a.active_reservation_id===null,"debt or chance not settled "+JSON.stringify(a));
+  const repeat=await call(await settle(db,c,"commit",BASE+1001));assert(repeat.status===200&&repeat.data.idempotent===true,"commit replay");
+ }));
+ checks.push(await testOn(db,"two_chances_repay",async u=>{
+  await seed(db,u,[],[]);
+  for(const [suffix,qty] of [["chance_a",8],["chance_b",12]]){
+   const c={...cid(u,suffix),quantity:qty};
+   assert((await call(await reserve(db,c,BASE))).status===200,"reserve "+suffix);
+   assert((await call(await settle(db,c,"commit",BASE+1000))).status===200,"commit "+suffix);
+  }
+  const exhausted=await call(await reserve(db,{...cid(u,"blocked_third"),quantity:1},BASE+2000));
+  assert(exhausted.status===409&&exhausted.data.error==="overdraft_opportunities_exhausted","third chance permitted");
+  const gift1=await call(await applyCredit(db,{credit_id:"credit_partial_123",user_id:u,source:"gift",quantity:19,expires_at_ms:BASE+999999},BASE+2000));
+  assert(gift1.status===200&&gift1.data.repaid_units===19&&gift1.data.available_added_units===0,"partial debt repayment "+JSON.stringify(gift1));
+  const stillBlocked=await call(await reserve(db,{...cid(u,"partial_blocked"),quantity:1},BASE+3000));
+  assert(stillBlocked.status===409,"partial repayment restored chances");
+  const gift2=await call(await applyCredit(db,{credit_id:"credit_finish_123",user_id:u,source:"gift",quantity:4,expires_at_ms:BASE+999999},BASE+3000));
+  assert(gift2.status===200&&gift2.data.repaid_units===1&&gift2.data.available_added_units===3,"full repayment "+JSON.stringify(gift2));
+  const acct=await one(db,"SELECT debt_units,successful_uses FROM battery_overdraft_accounts WHERE user_id=?",u);
+  assert(acct.debt_units===0&&acct.successful_uses===0,"chances not instantly restored");
+  const next={...cid(u,"new_cycle"),quantity:8};
+  const rr=await call(await reserve(db,next,BASE+4000));
+  assert(rr.status===200&&rr.data.funded_units===3&&rr.data.overdraft_units===5,"new two-chance cycle blocked "+JSON.stringify(rr));
+  const cc=await call(await settle(db,next,"release",BASE+5000));assert(cc.status===200,"release renewed chance failed");
+ }));
+ checks.push(await testOn(db,"concurrent_overdraft",async u=>{
+  await seed(db,u,[],[]);
+  const a={...cid(u,"race_a"),quantity:5},b={...cid(u,"race_b"),quantity:6};
+  const results=await Promise.all([reserve(db,a,BASE),reserve(db,b,BASE)]).then(xs=>Promise.all(xs.map(call)));
+  assert(results.filter(x=>x.status===200).length===1&&results.filter(x=>x.status===409).length===1,"overdraft double-book "+JSON.stringify(results));
+  const active=results[0].status===200?a:b;
+  const release=await call(await settle(db,active,"release",BASE+1000));assert(release.status===200,"release active overdraft");
+  const acct=await one(db,"SELECT debt_units,successful_uses,active_reservation_id FROM battery_overdraft_accounts WHERE user_id=?",u);
+  assert(acct.debt_units===0&&acct.successful_uses===0&&acct.active_reservation_id===null,"release consumed chance");
+ }));
+ checks.push(await testOn(db,"credit_conflict",async u=>{
+  await seed(db,u,[],[]);
+  const c={...cid(u,"pending_credit"),quantity:3};
+  assert((await call(await reserve(db,c,BASE))).status===200,"reserve");
+  const x={credit_id:"credit_waiting_123",user_id:u,source:"gift",quantity:10,expires_at_ms:BASE+900000};
+  const blocked=await call(await applyCredit(db,x,BASE+100));
+  assert(blocked.status===409&&blocked.data.error==="overdraft_settlement_pending_retry","grant allowed to race overdraft");
+  assert((await call(await settle(db,c,"release",BASE+200))).status===200,"release");
+  assert((await call(await applyCredit(db,x,BASE+300))).status===200,"grant retry");
+  const duplicate=await call(await applyCredit(db,x,BASE+400));
+  assert(duplicate.status===200&&duplicate.data.idempotent,"grant idempotency");
  }));
  const req=new Request("https://battery-engine.internal/v1/reserve",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({app_id:"e2e_app",user_id:"e2e_authority",operation_id:"e2e_op_auth",quantity:1})});
  const guarded=await call(await engine.fetch(req,{BATTERY_DB:db}));
