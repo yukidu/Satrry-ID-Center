@@ -44,6 +44,24 @@ async function readJson(req,keys,maxLength){
   return x;
  }catch{return null;}
 }
+// Imported legacy principals still depend on the ORIGINAL authority until
+// formal cutover. A copied Central row must never bypass legacy suspension.
+async function legacyAuthorized(env,userId,googleSubject=null){
+ const imported=await env.CENTRAL_DB.prepare(
+  "SELECT legacy_user_id FROM compat_legacy_principals WHERE legacy_user_id=? LIMIT 1"
+ ).bind(userId).first();
+ if(!imported)return true;
+ if(!env?.LEGACY_AUTH_DB?.prepare)return false;
+ const current=await env.LEGACY_AUTH_DB.prepare(
+  "SELECT status FROM users WHERE id=? LIMIT 1"
+ ).bind(userId).first();
+ if(current?.status!=="active")return false;
+ if(!googleSubject)return true;
+ const identity=await env.LEGACY_AUTH_DB.prepare(
+  "SELECT userId FROM identities WHERE provider='google' AND providerSubject=? AND emailVerified=1 LIMIT 1"
+ ).bind(googleSubject).first();
+ return identity?.userId===userId;
+}
 function signedNonce(credential){
  const part=credential.split(".")[1];
  const base64=part.replace(/-/g,"+").replace(/_/g,"/")+"=".repeat((4-part.length%4)%4);
@@ -83,6 +101,10 @@ async function exchange(req,env,now,verifyGoogle){
  if(!identity?.user_id||identity.suspended_at_ms!==null||identity.deleted_at_ms!==null)
   return reply(req,{error:"central_account_unavailable"},403);
  try{
+  if(!(await legacyAuthorized(env,identity.user_id,proof.subject)))
+   return reply(req,{error:"central_account_unavailable"},403);
+ }catch{return unavailable(req);}
+ try{
   const raw=random();
   const issued=await env.CENTRAL_DB.prepare(
    "INSERT INTO central_app_access_tokens(token_sha256,user_id,app_id,source_nonce_sha256,issued_auth_version,issued_at_ms,expires_at_ms) SELECT ?,u.user_id,?,?,u.auth_version,?,? FROM identity_users u WHERE u.user_id=? AND u.suspended_at_ms IS NULL AND u.deleted_at_ms IS NULL RETURNING token_sha256"
@@ -110,6 +132,9 @@ async function statusFor(req,env,now){
     row.revoked_at_ms!==null||row.issued_auth_version!==row.auth_version||
     row.suspended_at_ms!==null||row.deleted_at_ms!==null)
   return reply(req,{error:"unauthorized"},401);
+ try{
+  if(!(await legacyAuthorized(env,row.user_id)))return reply(req,{error:"unauthorized"},401);
+ }catch{return unavailable(req);}
  return reply(req,{user_id:row.user_id,display_name:row.display_name||null,
   membership_status:row.membership_status,app_id:appId,
   scope:"central.identity.read",management_authorized:false,battery_authorized:false});
