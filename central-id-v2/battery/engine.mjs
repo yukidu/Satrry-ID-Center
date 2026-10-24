@@ -128,8 +128,8 @@ export async function applyCredit(db,c,time=nowMs()){
   !/^[a-z0-9_-]{3,80}$/.test(c.source||"")||!validQuantity(c.quantity)||
   !Number.isSafeInteger(c.expires_at_ms)||c.expires_at_ms<=time)
   return reply({error:"invalid_credit"},400);
- const existing=await first(db,"SELECT credit_id,user_id,quantity FROM battery_credit_receipts WHERE credit_id=?",c.credit_id);
- if(existing)return existing.user_id===c.user_id&&existing.quantity===c.quantity
+ const existing=await first(db,"SELECT credit_id,user_id,quantity,source,expires_at_ms FROM battery_credit_receipts WHERE credit_id=?",c.credit_id);
+ if(existing)return existing.user_id===c.user_id&&existing.quantity===c.quantity&&existing.source===c.source&&existing.expires_at_ms===c.expires_at_ms
   ?reply({credit_id:c.credit_id,idempotent:true}):reply({error:"credit_conflict"},409);
  const account=await first(db,"SELECT debt_units,successful_uses,active_reservation_id FROM battery_overdraft_accounts WHERE user_id=?",c.user_id);
  if(account?.active_reservation_id)return reply({error:"overdraft_settlement_pending_retry"},409);
@@ -139,18 +139,19 @@ export async function applyCredit(db,c,time=nowMs()){
  const ops=[
   stmt(db,"INSERT OR IGNORE INTO battery_wallets(user_id,available_units,reserved_units,version) VALUES(?,0,0,1)",c.user_id),
   stmt(db,"INSERT OR IGNORE INTO battery_overdraft_accounts(user_id,debt_units,successful_uses,active_reservation_id) VALUES(?,0,0,NULL)",c.user_id),
-  stmt(db,"INSERT INTO battery_credit_receipts(credit_id,user_id,quantity,repaid_units,lot_units,created_at_ms) VALUES(?,?,?,?,?,?)",c.credit_id,c.user_id,c.quantity,repay,remaining,time),
+  stmt(db,"INSERT INTO battery_credit_receipts(credit_id,user_id,quantity,repaid_units,lot_units,created_at_ms,source,expires_at_ms) VALUES(?,?,?,?,?,?,?,?)",c.credit_id,c.user_id,c.quantity,repay,remaining,time,c.source,c.expires_at_ms),
   stmt(db,"UPDATE battery_overdraft_accounts SET debt_units=CASE WHEN debt_units=? AND active_reservation_id IS NULL THEN debt_units-? ELSE -1 END,successful_uses=CASE WHEN debt_units=? AND debt_units-?=0 THEN 0 ELSE successful_uses END WHERE user_id=?",
    debt,repay,debt,repay,c.user_id),
   stmt(db,"UPDATE battery_wallets SET available_units=CASE WHEN version=? AND available_units<=? THEN available_units+? ELSE -1 END,version=version+1 WHERE user_id=?",
    wallet?.version??1,MAX_UNITS-remaining,remaining,c.user_id)
  ];
+ ops.push(stmt(db,"INSERT INTO battery_ledger(entry_id,user_id,app_id,operation_id,quantity_delta,created_at_ms) VALUES(?,?,?,?,?,?)",SEC().randomUUID(),c.user_id,"battery_issuer",c.credit_id,c.quantity,time));
  if(remaining>0)ops.push(stmt(db,"INSERT INTO battery_lots(lot_id,user_id,source,expires_at_ms,available_units,reserved_units) VALUES(?,?,?,?,?,0)",
   "grant_"+c.credit_id,c.user_id,c.source,c.expires_at_ms,remaining));
  try{await db.batch(ops);return reply({credit_id:c.credit_id,repaid_units:repay,available_added_units:remaining,idempotent:false});}
  catch{
-  const dup=await first(db,"SELECT credit_id,user_id,quantity FROM battery_credit_receipts WHERE credit_id=?",c.credit_id);
-  if(dup&&dup.user_id===c.user_id&&dup.quantity===c.quantity)return reply({credit_id:c.credit_id,idempotent:true});
+  const dup=await first(db,"SELECT credit_id,user_id,quantity,source,expires_at_ms FROM battery_credit_receipts WHERE credit_id=?",c.credit_id);
+  if(dup&&dup.user_id===c.user_id&&dup.quantity===c.quantity&&dup.source===c.source&&dup.expires_at_ms===c.expires_at_ms)return reply({credit_id:c.credit_id,idempotent:true});
   return reply({error:"credit_transaction_conflict_retry"},409);
  }
 }
@@ -212,20 +213,26 @@ export default{
  },
  async fetch(request,env){
   const url=new URL(request.url);
-  if(request.method!=="POST"||!["/v1/reserve","/v1/commit","/v1/release"].includes(url.pathname))return reply({error:"not_found"},404);
-  if(!env?.BATTERY_DB?.batch||typeof env.BATTERY_ENGINE_SECRET!=="string"||env.BATTERY_ENGINE_SECRET.length<32)return reply({error:"engine_not_configured"},503);
-  const auth=request.headers.get("X-Battery-Internal-Authorization")||"";
-  if(!auth.startsWith("Bearer ")||!await secureEqual(auth.slice(7),env.BATTERY_ENGINE_SECRET))return reply({error:"internal_access_denied"},403);
+  if(request.method!=="POST"||!["/v1/reserve","/v1/commit","/v1/release","/v1/credit"].includes(url.pathname))return reply({error:"not_found"},404);
+  const credit=url.pathname==="/v1/credit";
+  const secretName=credit?"BATTERY_CREDIT_ISSUER_SECRET":"BATTERY_ENGINE_SECRET";
+  const secret=env?.[secretName];
+  if(!env?.BATTERY_DB?.batch||typeof secret!=="string"||secret.length<32)return reply({error:credit?"credit_issuer_not_configured":"engine_not_configured"},503);
+  const auth=request.headers.get(credit?"X-Battery-Credit-Authorization":"X-Battery-Internal-Authorization")||"";
+  if(auth.length>1024||!auth.startsWith("Bearer ")||!await secureEqual(auth.slice(7),secret))return reply({error:"internal_access_denied"},403);
   if(!/^application\/json(?:;|$)/i.test(request.headers.get("Content-Type")||""))return reply({error:"unsupported_content_type"},415);
   let c;
   try{const raw=await request.text();if(raw.length>2048)return reply({error:"request_too_large"},413);c=JSON.parse(raw);}
   catch{return reply({error:"invalid_json"},400);}
   const action=url.pathname.split("/").at(-1);
   if(!c||Array.isArray(c)||typeof c!=="object"||
-   Object.keys(c).sort().join(",")!==(action==="reserve"?"app_id,operation_id,quantity,user_id":"app_id,operation_id,user_id")||
-   !reId.test(c.operation_id||"")||!reApp.test(c.app_id||"")||!reUser.test(c.user_id||"")||
-   (action==="reserve"&&(!Number.isSafeInteger(c.quantity)||c.quantity<1||c.quantity>MAX_UNITS)))return reply({error:"invalid_operation"},400);
-  try{return action==="reserve"?await reserve(env.BATTERY_DB,c):await settle(env.BATTERY_DB,c,action);}
+   Object.keys(c).sort().join(",")!==(credit?"credit_id,expires_at_ms,quantity,source,user_id":action==="reserve"?"app_id,operation_id,quantity,user_id":"app_id,operation_id,user_id")||
+   (credit?(!reId.test(c.credit_id||"")||!reUser.test(c.user_id||"")||
+     !/^[a-z0-9_-]{3,80}$/.test(c.source||"")||!validQuantity(c.quantity)||
+     !Number.isSafeInteger(c.expires_at_ms)||c.expires_at_ms<=Date.now()):
+     (!reId.test(c.operation_id||"")||!reApp.test(c.app_id||"")||!reUser.test(c.user_id||"")||
+      (action==="reserve"&&!validQuantity(c.quantity)))))return reply({error:credit?"invalid_credit":"invalid_operation"},400);
+  try{return credit?await applyCredit(env.BATTERY_DB,c):action==="reserve"?await reserve(env.BATTERY_DB,c):await settle(env.BATTERY_DB,c,action);}
   catch{return reply({error:"engine_database_unavailable"},503);}
  }
 };
