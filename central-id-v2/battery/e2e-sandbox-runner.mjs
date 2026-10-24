@@ -2,7 +2,7 @@
 // This Worker has no public hostname, route or exposed endpoint. Runs once per RUN_ID.
 // It calls the actual source engine with Cloudflare's real D1 binding, not a mock.
 import engine, { reserve, settle, sweepExpiredReservations, sweepExpiredAvailableLots,applyCredit } from "./engine.mjs";
-const RUN_ID="bat-d1-e2e-overdraft-20261024-04";
+const RUN_ID="bat-d1-e2e-overdraft-20261024-05";
 const BASE=Date.now() + 48*3600000; // future logical clock: production sandbox Cron can't race
 const assert=(ok, why)=>{if(!ok)throw Error(why)};
 const one=(db,sql,...args)=>db.prepare(sql).bind(...args).first();
@@ -163,7 +163,7 @@ async function main(db){
  }));
  checks.push(await testOn(db,"private_credit_authorization",async u=>{
   await seed(db,u,[],[]);
-  const value={credit_id:"credit_secure_issue_123",user_id:u,source:"gift",quantity:5,expires_at_ms:BASE+900000};
+  const value={credit_id:"credit_secure_issue_123",user_id:u,source:"gift",quantity:5,expires_at_ms:Date.now()+48*3600000};
   const send=(header,env)=>engine.fetch(new Request("https://battery-engine.internal/v1/credit",{
     method:"POST",headers:{"Content-Type":"application/json","X-Battery-Credit-Authorization":header},body:JSON.stringify(value)
    }),env);
