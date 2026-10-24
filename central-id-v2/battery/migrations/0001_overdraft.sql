@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS battery_credit_receipts (
  repaid_units INTEGER NOT NULL DEFAULT 0 CHECK(repaid_units>=0),
  lot_units INTEGER NOT NULL DEFAULT 0 CHECK(lot_units>=0),
  created_at_ms INTEGER NOT NULL,
+ source TEXT NOT NULL,
+ expires_at_ms INTEGER NOT NULL,
  CHECK(repaid_units+lot_units=quantity)
 );
 CREATE INDEX IF NOT EXISTS idx_battery_credit_receipts_user ON battery_credit_receipts(user_id,created_at_ms);
