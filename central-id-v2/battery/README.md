@@ -46,3 +46,9 @@
 - Preview 私有 Engine：`starry-battery-engine-preview-v2-20261024`（workers.dev 停用）；Preview Gateway：`starry-battery-gateway-preview-v2-20261024`（已設定只連專屬 D1 與私有 Engine；故意不綁正式 CENTRAL_AUTH_VERIFY，須 fail closed）。
 - GitHub Actions Battery isolated guard 和外部 Gateway 健康檢查通過（workflow run `40063045064`）；PR #37 保持 Draft，**Production 仍未合併／未啟用**。
 - 不可把 E2E 12/12 等同全部商業需求正式完成；還須真實中央 OAuth 契約、約 30 Apps 逐款接入、贈送／R2／正式遷移與回退等 Gate。
+
+## 2026-10-24｜新增驗收：Credit issuer 14/14 與 R2 歷史封存實測通過
+- 真實 Cloudflare 隔離 D1 E2E `bat-d1-e2e-overdraft-20261024-05`：**14/14 PASS**。測試包括入帳來源／到期日不可重播、只有獨立的 `BATTERY_CREDIT_ISSUER_SECRET` 才能執行私有發放，以及成功扣款、單工透支、欠款清償後立即回復兩次。測試 Cron 已停用。
+- 真實 Cloudflare R2/D1 E2E `bat-r2-archive-e2e-20261024-01`：**PASS**（checked=1、archived=1）。專屬 Preview R2 `starry-battery-ledger-preview-20261024` 與 D1 `starry-battery-overdraft-preview-20261024` 共同驗收：寫 R2、立即讀回相符、建立 SHA-256 D1 index、原 D1 舊明細原子刪除、按可信任 user_id 從 R2 正確回查。測試資料清理後 wallet/ledger/archive index 全為零；測試 Cron 已停用。
+- 獨立 Preview Workers 已更新：`starry-battery-engine-preview-v2-20261024`（私有）、`starry-battery-gateway-preview-v2-20261024`（綁 Gateway 自己的 D1、Engine 與 R2）、`starry-battery-archive-preview-v2-20261024`（私有、`BATTERY_ARCHIVE_ENABLED=false`、無 Cron）。
+- **此證據不等於 Production 完成**：中央 Auth Service Binding／真正 Starry Token、逐 App 金鑰與 scopes、正式贈送事件、安全稽核、刪帳 R2 清理／效期到期提醒、正式資料 migration/backup/rollback 尚未整合通過；專屬 Gateway 仍以無正式中央 Auth 方式 fail closed。PR #37 維持 Draft，`rules-catalog.production_ready=false`。
