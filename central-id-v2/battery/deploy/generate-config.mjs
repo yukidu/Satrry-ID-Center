@@ -1,6 +1,7 @@
 // Generate service-specific Wrangler configs without modifying Central ID resources.
 import fs from "node:fs";
 import path from "node:path";
+import {fileURLToPath} from "node:url";
 const base=new URL("../",import.meta.url);
 const target=process.env.BATTERY_TARGET;
 const d1id=process.env.BATTERY_D1_ID;
@@ -17,7 +18,7 @@ const engine={...common,name:engineName,main:"engine.mjs",workers_dev:false,trig
 const gateway={...common,name:"starry-battery-gateway-"+target,main:"worker.mjs",workers_dev:target==="preview",services:[{binding:"BATTERY_ENGINE",service:engineName}]};
 if(central)gateway.services.push({binding:"CENTRAL_AUTH_VERIFY",service:central});
 for(const [name,config] of [["engine",engine],["gateway",gateway]]){
- const output=path.join(path.fileURLToPath(base),".wrangler."+name+".generated.json");
+ const output=path.join(fileURLToPath(base),".wrangler."+name+".generated.json");
  fs.writeFileSync(output,JSON.stringify(config,null,2)+"\n",{mode:0o600});
 }
 console.log("Generated isolated Battery Wrangler configs for",target,"(no Central ID settings modified)");
