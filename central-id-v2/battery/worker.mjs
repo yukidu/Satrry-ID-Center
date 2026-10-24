@@ -1,3 +1,4 @@
+import {readArchivedLedger} from "./archive.mjs";
 // Starry-only Battery API Gateway: authenticated backend-to-backend adapter.
 // App credentials are never sent by browsers. Gateway has NO direct write route to D1.
 // Engine is accessible only over a private Service Binding; absent bindings fail closed.
