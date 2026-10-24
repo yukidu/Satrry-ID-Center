@@ -37,3 +37,12 @@
 - Gateway `GET /v1/battery/wallet` 新回傳 `available_units`（淨餘額，可能為負）、`spendable_units`（有效可用正值）、`debt_units`、`overdraft_remaining`、`overdraft_in_progress`。需在約 30 App 逐一驗證新版欄位相容性。
 - 所有參數仍受 JavaScript 安全整數及資料庫 Check、防重、Rate limit 等技術安全界線保護；無單筆**業務**限制不等於無限數字或可跳過限流。
 - 全部正式部署 Gate 仍未完成：真實中央 Auth Service Binding、私有 Engine Secret、App 安全金鑰發放、獨立 production D1 migration 與回退、R2 歸檔與用量風控、真實 D1 跨 App E2E、Preview 與 Production 健康驗證。**此 PR 不應自動啟用正式扣款。**
+
+## 2026-10-24｜真實隔離 D1 與 Cloudflare Preview 驗收證據
+- 測試庫：`starry-battery-overdraft-e2e-20261024`；私有 E2E Worker：`starry-battery-overdraft-e2e-private-20261024`（無公開網址，測試 Cron 已停用）。
+- 第一輪 `bat-d1-e2e-overdraft-20261024-02` 為 11/12；排程在上輪完成前重複開始造成 `cleanupall` 暫時殘留，已用唯一 `e2e_run_claims` 鎖保護。
+- 第二輪 `bat-d1-e2e-overdraft-20261024-03` **12/12 PASS**，包含 FEFO、取消、逾時、到期保護、普通並行扣款、首次透支、兩次透支和還款重設、同會員透支併行、信用發放衝突重試、私有 Engine 身分拒絕與清理。
+- Preview 專屬庫：`starry-battery-overdraft-preview-20261024`（已套用 schema 與 reservation split SQL guard）。
+- Preview 私有 Engine：`starry-battery-engine-preview-v2-20261024`（workers.dev 停用）；Preview Gateway：`starry-battery-gateway-preview-v2-20261024`（已設定只連專屬 D1 與私有 Engine；故意不綁正式 CENTRAL_AUTH_VERIFY，須 fail closed）。
+- GitHub Actions Battery isolated guard 和外部 Gateway 健康檢查通過（workflow run `40063045064`）；PR #37 保持 Draft，**Production 仍未合併／未啟用**。
+- 不可把 E2E 12/12 等同全部商業需求正式完成；還須真實中央 OAuth 契約、約 30 Apps 逐款接入、贈送／R2／正式遷移與回退等 Gate。
