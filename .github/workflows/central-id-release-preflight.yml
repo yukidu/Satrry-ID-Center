@@ -1,0 +1,40 @@
+name: Central ID release read-only preflight
+
+# Manual ONLY. This workflow performs GET requests, never applies D1 migration,
+# modifies secrets, or deploys either Central or Battery Workers.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Read-only Central ID target"
+        required: true
+        type: choice
+        options: [preview, production]
+
+permissions:
+  contents: read
+
+# Keep this exact production group for any FUTURE Central production deploy.
+concurrency:
+  group: ${{ inputs.target == 'production' && 'production-central-id' || 'preview-central-id' }}
+  cancel-in-progress: false
+
+jobs:
+  central-read-only-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: ${{ inputs.target == 'production' && 'production-central-id' || 'central-preview' }}
+    env:
+      CLOUDFLARE_API_TOKEN_CENTRAL: ${{ secrets.CLOUDFLARE_API_TOKEN_CENTRAL }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify central-only source test suite
+        run: node --test central-id-v2/test/central-release-boundary.test.mjs
+      - name: Fail-closed live Cloudflare central resource audit
+        run: node central-id-v2/release/verify-central-cloudflare.mjs "${{ inputs.target }}"
+      - name: Attestation
+        run: echo 'GET-only Central preflight passed. This job does NOT deploy or modify any D1, Worker, route, Secret, or Battery resource.'
