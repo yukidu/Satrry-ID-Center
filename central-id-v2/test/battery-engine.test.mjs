@@ -20,10 +20,10 @@ function dbWith({existing=null,lots=[{lot_id:"early",available_units:2,expires_a
        throw Error("unexpected first "+sql);
       },
       async all(){
+       if(sql.includes("FROM battery_lots WHERE expires_at_ms<="))return {results:expiredLots};
        if(sql.includes("FROM battery_lots WHERE"))return {results:lots};
        if(sql.includes("FROM battery_reservation_allocations a JOIN battery_lots"))return {results:allocations};
        if(sql.includes("FROM battery_reservations WHERE state='reserved'"))return {results:expiredReservations};
-       if(sql.includes("FROM battery_lots WHERE expires_at_ms<="))return {results:expiredLots};
        throw Error("unexpected all "+sql);
       }
      };
