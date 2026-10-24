@@ -75,6 +75,13 @@ jobs:
             https://starry-battery-gateway-preview-v2-20261024.yukidu.workers.dev/health \
             -o /tmp/battery-health.json
           node --input-type=module -e "import fs from 'node:fs';const o=JSON.parse(fs.readFileSync('/tmp/battery-health.json'));if(o.service!=='starry-battery-gateway'||o.status!=='reachable')process.exit(1)"
+      - name: Preview refuses unauthenticated Battery access
+        if: github.event_name == 'pull_request'
+        run: |
+          set -eu
+          code="$(curl --silent --show-error --retry 3 --max-time 15 --output /tmp/battery-denied.json --write-out '%{http_code}' https://starry-battery-gateway-preview-v2-20261024.yukidu.workers.dev/v1/battery/wallet)"
+          test "$code" = "503"
+          node --input-type=module -e "import fs from 'node:fs';const x=JSON.parse(fs.readFileSync('/tmp/battery-denied.json'));if(x.error!=='dependency_unavailable')process.exit(1)"
       - name: Confirm no production deployment in this workflow
         run: |
           echo 'Guard only: no Cloudflare credentials, migrations, or production deployment.'
