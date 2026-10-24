@@ -40,8 +40,7 @@ async function run(db,env){
   await db.batch([
    db.prepare("INSERT INTO identity_users(user_id,created_at_ms,updated_at_ms,membership_status) VALUES(?,?,?,'approved')").bind(USER,now-10000,now-10000),
    db.prepare("INSERT INTO central_brand_authorizations(user_id,brand_scope,granted_at_ms,authorization_reference) VALUES(?,'starry',?,'sandbox-fixture-event')").bind(USER,now-10000),
-   db.prepare("INSERT INTO auth_sessions(session_id_hash,user_id,brand_scope,issued_at_ms,expires_at_ms,issued_auth_version) VALUES(?,?,'central',?,?,1)").bind(sessionHash,USER,now-10000,now+600000),
-   db.prepare("SELECT user_id FROM identity_users WHERE user_id=?").bind(USER)
+   db.prepare("INSERT INTO auth_sessions(session_id_hash,user_id,brand_scope,issued_at_ms,expires_at_ms,issued_auth_version) VALUES(?,?,'central',?,?,1)").bind(sessionHash,USER,now-10000,now+600000)
   ]);
   const minted=await issueCentralStarryToken({CENTRAL_DB:db,CENTRAL_TOKEN_ISSUER_ENABLED:"true"},SESSION,now);
   check(all,"Central internal issuer mints from live approved session only",minted.ok===true&&/^[A-Za-z0-9_-]{43}$/.test(minted.token||""));
