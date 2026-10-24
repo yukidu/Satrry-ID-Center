@@ -51,9 +51,21 @@ jobs:
     timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Ensure Central PR does not include Battery-owned files
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --name-only "origin/$GITHUB_BASE_REF"...HEAD > /tmp/central-id-pr-changed-files.txt
+          if grep -E '^(central-id-v2/battery/|central-id-v2/test/battery[^/]*|central-id-v2/acceptance/)' /tmp/central-id-pr-changed-files.txt; then
+            echo "::error::Central ID PR contains Battery-owned or legacy mixed-acceptance files. Split the changes into service-specific PRs."
+            exit 1
+          fi
       - name: Central ID only (never execute Battery Engine tests)
         shell: bash
         run: |
