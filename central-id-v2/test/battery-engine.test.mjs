@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {webcrypto} from "node:crypto";
-import engine,{reserve,settle,sweepExpiredReservations,sweepExpiredAvailableLots} from "../battery/engine.mjs";
+import engine,{reserve,settle,sweepExpiredReservations,sweepExpiredAvailableLots,sweepOldRateLimitWindows} from "../battery/engine.mjs";
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
 const c={user_id:"member_123",app_id:"starry_echo",operation_id:"operation_123",quantity:4};
 function dbWith({existing=null,lots=[{lot_id:"early",available_units:2,expires_at_ms:100000},{lot_id:"late",available_units:7,expires_at_ms:200000}],wallet=9,allocations=[],expiredReservations=[],expiredLots=[]}={}){
@@ -126,6 +126,15 @@ test("expiry cleanup removes available lots and matching wallet units atomically
  assert.equal(db.batches.length,1);
  assert.match(db.batches[0][0].sql,/ELSE -1/,"expired-lot update must fail closed on concurrent changes");
  assert.equal(db.batches[0][1].args[0],7);
+});
+test("old API rate-limit windows are pruned only in bounded batches",async()=>{
+ let q="",params=[];
+ const db={prepare(sql){q=sql;return{bind(...args){params=args;return{async run(){return {meta:{changes:9}}}}}}}};
+ const r=await sweepOldRateLimitWindows(db,48*3600000+180000,500);
+ assert.equal(r.deleted,9);
+ assert.match(q,/DELETE FROM battery_app_rate_limits/);
+ assert.match(q,/LIMIT \?/);
+ assert.deepEqual(params,[180000,500]);
 });
 test("private Cron scheduled() silently skips missing sandbox D1",async()=>{
  await assert.doesNotReject(()=>engine.scheduled({},{}));
