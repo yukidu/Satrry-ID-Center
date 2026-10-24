@@ -15,10 +15,24 @@ async function verifiedPrincipal(request,env,needed){
  const keyHash=await sha256(match[1]);
  let client;
  try{
-  client=await env.BATTERY_DB.prepare("SELECT app_id,scopes FROM battery_app_clients WHERE app_id=? AND token_sha256=? AND enabled=1 LIMIT 1").bind(id,keyHash).first();
+  client=await env.BATTERY_DB.prepare("SELECT app_id,scopes,rate_limit_per_minute FROM battery_app_clients WHERE app_id=? AND token_sha256=? AND enabled=1 LIMIT 1").bind(id,keyHash).first();
  }catch{return {error:"database_unavailable",status:503};}
  if(!client)return {error:"app_forbidden",status:403};
  if(!scopesFor(client).has(needed))return {error:"scope_forbidden",status:403};
+ // Atomic, per-app configurable 60-second quota; reject when exhausted.
+ // Throttle before central token introspection to protect the shared identity service.
+ const max=Number(client.rate_limit_per_minute);
+ const limit=Number.isSafeInteger(max)&&max>=1&&max<=10000?max:120;
+ const minute=Math.floor(Date.now()/60000)*60000;
+ let quota;
+ try{
+  quota=await env.BATTERY_DB.prepare(
+   "INSERT INTO battery_app_rate_limits(app_id,window_start_ms,request_count) VALUES(?,?,1) "+
+   "ON CONFLICT(app_id,window_start_ms) DO UPDATE SET request_count=request_count+1 "+
+   "WHERE request_count<? RETURNING request_count"
+  ).bind(id,minute,limit).first();
+ }catch{return {error:"rate_limit_unavailable",status:503};}
+ if(!quota)return {error:"rate_limit_exceeded",status:429};
  let reply;
  try{
   reply=await env.CENTRAL_AUTH_VERIFY.fetch(new Request("https://central-auth.internal/v1/introspect",{
@@ -62,6 +76,7 @@ export default {
   try{const raw=await request.text();if(raw.length>2048)return json({error:"payload_too_large"},413);body=JSON.parse(raw);}
   catch{return json({error:"invalid_json"},400);}
   if(!body||typeof body!=="object"||Array.isArray(body)||
+      Object.keys(body).sort().join(",")!==(op==="reserve"?"operation_id,quantity":"operation_id")||
       !/^[A-Za-z0-9_-]{8,120}$/.test(body.operation_id||"")||
       (op==="reserve"&&(!Number.isSafeInteger(body.quantity)||body.quantity<=0||body.quantity>1000000)))
      return json({error:"invalid_operation"},400);
