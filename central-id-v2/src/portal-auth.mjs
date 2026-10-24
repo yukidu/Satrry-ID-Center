@@ -1,6 +1,8 @@
 // Central ID browser authentication. This is separate from the Echo compatibility API.
 // Production is fail-closed when OAuth origin / D1 / old account authority are unavailable.
 import {compatTest} from "./compat.mjs";
+import {isValidHglobalCenter} from "./centers.mjs";
+import {centerClientCode} from "./center-client.mjs";
 import {loginPage,dashboardPage,settingsPage,portalResponse,scriptResponse} from "./portal.mjs";
 import {portalClientCode} from "./portal-script.mjs";
 const APP_ORIGIN="https://id.hglobal1985.com";
@@ -131,10 +133,43 @@ async function updateOwnProfile(request,env){
  return success({saved:true,field:payload.field,version:updated.record_version});
 }
 
+
+// H-Global portal only: system is server-assigned, center is saved immediately without approval.
+// Migration 0005 atomically expires old center-scope grants and sessions whenever the center changes.
+async function updateHglobalCenter(request,env){
+ if(!originOk(request))return err("origin_not_allowed",403);
+ if(!/^application\/json(?:;|$)/i.test(request.headers.get("Content-Type")||""))return err("unsupported_content_type",415);
+ if(!identityDb(env))return err("database_unavailable",503);
+ const current=await portalUser(request,env);
+ if(!current)return err("unauthorized",401);
+ let payload;
+ try{const raw=await request.text();if(raw.length>250)return err("too_large",413);payload=JSON.parse(raw);}catch{return err("invalid_json");}
+ if(!payload||typeof payload!=="object"||Array.isArray(payload)||
+    Object.keys(payload).sort().join(",")!=="centerCode,version"||
+    !isValidHglobalCenter(payload.centerCode)||!Number.isSafeInteger(payload.version)||payload.version<1)
+    return err("invalid_center_selection",400);
+ if(current.recordVersion!==payload.version)return err("profile_version_conflict",409);
+ if(current.membershipSystem==="hglobal"&&current.centerCode===payload.centerCode)
+    return success({saved:true,center_code:payload.centerCode,version:current.recordVersion,relogin:false});
+ let updated;
+ try{
+  updated=await env.CENTRAL_DB.prepare(
+   "UPDATE member_profiles SET membership_system='hglobal',center_code=?,updated_at_ms=?,record_version=record_version+1 "+
+   "WHERE user_id=? AND record_version=? AND EXISTS (SELECT 1 FROM education_centers WHERE center_code=? AND is_active=1) RETURNING record_version"
+  ).bind(payload.centerCode,Date.now(),current.id,payload.version,payload.centerCode).first();
+ }catch{return err("center_storage_unavailable",503);}
+ if(!updated)return err("center_unavailable_or_version_conflict",409);
+ return success({saved:true,center_code:payload.centerCode,version:updated.record_version,relogin:true});
+}
+
 export async function portalRoute(request,env){
  const u=new URL(request.url),path=u.pathname,method=request.method;
- if(!["/login","/dashboard","/me/settings","/portal.js","/api/v1/portal/profile","/api/v1/portal/challenge","/api/v1/portal/google-login","/api/v1/portal/logout","/api/v1/portal/me"].includes(path))return null;
+ if(!["/login","/dashboard","/me/settings","/portal.js","/center.js","/api/v1/portal/profile","/api/v1/portal/center","/api/v1/portal/challenge","/api/v1/portal/google-login","/api/v1/portal/logout","/api/v1/portal/me"].includes(path))return null;
  if(![APP_ORIGIN,PREVIEW_ORIGIN].includes(u.origin))return err("invalid_host",404);
+ if(path==="/center.js"){
+  if(method!=="GET")return err("method_not_allowed",405);
+  return scriptResponse(centerClientCode);
+ }
  if(path==="/portal.js"){
   if(method!=="GET")return err("method_not_allowed",405);
   return scriptResponse(portalClientCode);
@@ -157,6 +192,10 @@ export async function portalRoute(request,env){
  if(path==="/api/v1/portal/profile"){
   if(method!=="POST")return err("method_not_allowed",405);
   return updateOwnProfile(request,env);
+ }
+ if(path==="/api/v1/portal/center"){
+  if(method!=="POST")return err("method_not_allowed",405);
+  return updateHglobalCenter(request,env);
  }
  if(path==="/api/v1/portal/challenge"){
   if(method!=="GET")return err("method_not_allowed",405);
