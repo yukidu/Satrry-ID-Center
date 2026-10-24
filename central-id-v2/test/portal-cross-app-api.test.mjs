@@ -13,7 +13,7 @@ const make=(p,{method="GET",originHeader=origin,body,headers={}}={})=>new Reques
 });
 const jwt=nonce=>"e30."+Buffer.from(JSON.stringify({nonce})).toString("base64url")+".sig";
 function sandbox(){
- const challenges=new Map(),tokens=new Map(),events=[];
+ const challenges=new Map(),tokens=new Map(),events=[],legacy={imported:false};
  const user={user_id:"central-user-abcd1234",auth_version:1,membership_status:"approved",
   suspended_at_ms:null,deleted_at_ms:null,display_name:"測試會員"};
  const db={prepare(sql){
@@ -34,6 +34,9 @@ function sandbox(){
      const x=challenges.get(hash);
      if(!x||x.app!==app||x.origin!==origin||x.consumed!==null||x.expires<=current)return null;
      x.consumed=time;return{nonce_sha256:hash};
+    }
+    if(sql.includes("SELECT legacy_user_id FROM compat_legacy_principals")){
+     return legacy.imported?{legacy_user_id:user.user_id}:null;
     }
     if(sql.includes("FROM auth_provider_links")){
      return args[0]==="google-test-sub"?user:null;
@@ -61,7 +64,7 @@ function sandbox(){
    }
   }}}
  }};
- return{CENTRAL_DB:db,user,challenges,tokens,events};
+ return{CENTRAL_DB:db,user,challenges,tokens,events,legacy};
 }
 const verified=async (_token,_fetch,audience)=>{
  assert.equal(audience,"791614645185-vbaqqbnr463r1vi4ga41uh73s7eg0gv5.apps.googleusercontent.com");
@@ -113,6 +116,10 @@ test("one-time signed Google nonce exchanges for 5 minute CENTRAL token, then on
   assert.equal(Object.hasOwn(identity,key),false,key);
  const replay=await crossAppRoute(make("token",{method:"POST",body:{app_id:"hglobal-web",nonce,credential:jwt(nonce)}}),env,now,verified);
  assert.equal(replay.status,401,"single-use proof cannot mint two tokens");
+ env.legacy.imported=true;
+ assert.equal((await crossAppRoute(make("me",{headers}),env,now)).status,401,
+  "legacy imported accounts without live source fail closed");
+ env.legacy.imported=false;
  env.user.auth_version++;
  assert.equal((await crossAppRoute(make("me",{headers}),env,now)).status,401,"auth_version revokes existing tokens");
  env.user.auth_version--;
