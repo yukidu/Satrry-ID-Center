@@ -74,6 +74,9 @@ db.execute("INSERT INTO identity_users(user_id,created_at_ms,updated_at_ms) VALU
 db.execute("INSERT INTO protected_admin_principals(role_code,user_id,bound_at_ms,authorization_reference) VALUES('hglobal_secretary','test-other',2,'test-approval-two')")
 rejected("INSERT INTO protected_admin_principals(role_code,user_id,bound_at_ms,authorization_reference) VALUES('third_admin','test-other',3,'test-approval-third')")
 rejected("INSERT INTO protected_admin_principals(role_code,user_id,bound_at_ms,authorization_reference) VALUES('hglobal_secretary','test-id',3,'test-approval-third')")
+rejected("INSERT OR REPLACE INTO protected_admin_principals(role_code,user_id,bound_at_ms,authorization_reference) VALUES('super_admin','test-other',4,'test-override-attempt')")
+rejected("INSERT OR REPLACE INTO protected_admin_principals(role_code,user_id,bound_at_ms,authorization_reference) VALUES('hglobal_secretary','test-id',4,'test-override-attempt')")
+rejected("INSERT INTO admin_role_grants(grant_id,user_id,role_code,scope_key,granted_at_ms) VALUES('forged-case','test-id',' SUPER_ADMIN ','EC-003',4)")
 rejected("UPDATE protected_admin_principals SET user_id='test-other' WHERE role_code='super_admin'")
 rejected("DELETE FROM protected_admin_principals WHERE role_code='super_admin'")
 assert db.execute("SELECT role_code,user_id FROM protected_admin_principals ORDER BY role_code").fetchall()==[
