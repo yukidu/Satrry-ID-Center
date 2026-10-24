@@ -28,10 +28,14 @@ const statement=`
 SELECT t.user_id, t.brand_scope, t.audience, t.expires_at_ms,
        t.issued_auth_version, t.revoked_at_ms, u.auth_version,
        u.membership_status, u.suspended_at_ms, u.deleted_at_ms,
-       g.granted_at_ms AS brand_granted_at_ms, g.revoked_at_ms AS brand_revoked_at_ms
+       g.granted_at_ms AS brand_granted_at_ms, g.revoked_at_ms AS brand_revoked_at_ms,
+       t.issued_at_ms, s.issued_at_ms AS parent_issued_at_ms,
+       s.expires_at_ms AS parent_expires_at_ms, s.revoked_at_ms AS parent_revoked_at_ms,
+       s.brand_scope AS parent_brand_scope, s.issued_auth_version AS parent_auth_version
 FROM central_service_access_tokens t
 JOIN identity_users u ON u.user_id=t.user_id
 JOIN central_brand_authorizations g ON g.user_id=t.user_id AND g.brand_scope=t.brand_scope
+JOIN auth_sessions s ON s.session_id_hash=t.parent_session_sha256 AND s.user_id=t.user_id
 WHERE t.token_sha256=? AND t.brand_scope='starry' AND t.audience='starry-battery'
 LIMIT 1`;
 
@@ -71,8 +75,13 @@ export async function introspect(request,env,nowMs=Date.now()){
  if(!data||!USER_ID.test(data.user_id||""))return reply({error:"unauthorized"},401);
  if(data.brand_scope!=="starry"||data.audience!=="starry-battery"||
     data.revoked_at_ms!==null||data.brand_revoked_at_ms!==null||
-    !Number.isSafeInteger(data.expires_at_ms)||data.expires_at_ms<=nowMs||
-    !Number.isSafeInteger(data.issued_auth_version)||
+    data.parent_revoked_at_ms!==null||data.parent_brand_scope!=="central"||
+    !Number.isSafeInteger(data.issued_at_ms)||data.issued_at_ms<=0||
+    !Number.isSafeInteger(data.brand_granted_at_ms)||data.brand_granted_at_ms>data.issued_at_ms||
+    !Number.isSafeInteger(data.parent_issued_at_ms)||data.parent_issued_at_ms>data.issued_at_ms||
+    !Number.isSafeInteger(data.parent_expires_at_ms)||data.parent_expires_at_ms<=nowMs||
+    !Number.isSafeInteger(data.expires_at_ms)||data.expires_at_ms<=nowMs||data.expires_at_ms>data.parent_expires_at_ms||
+    !Number.isSafeInteger(data.issued_auth_version)||data.parent_auth_version!==data.issued_auth_version||
     data.issued_auth_version!==data.auth_version||
     data.suspended_at_ms!==null||data.deleted_at_ms!==null||
     data.membership_status!=="approved"){
