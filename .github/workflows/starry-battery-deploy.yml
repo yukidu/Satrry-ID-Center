@@ -34,6 +34,7 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_BATTERY }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       BATTERY_ENGINE_SECRET: ${{ secrets.BATTERY_ENGINE_SECRET }}
+      BATTERY_CREDIT_ISSUER_SECRET: ${{ secrets.BATTERY_CREDIT_ISSUER_SECRET }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -48,6 +49,7 @@ jobs:
           test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
           test -n "$BATTERY_D1_ID" && test -n "$BATTERY_D1_NAME"
           test "${#BATTERY_ENGINE_SECRET}" -ge 32 || { echo "Battery private engine secret not configured"; exit 1; }
+          test "${#BATTERY_CREDIT_ISSUER_SECRET}" -ge 32 || { echo "Privileged Battery credit issuer secret not configured"; exit 1; }
           if [ "$BATTERY_TARGET" = production ]; then
             node --input-type=module -e "import fs from 'node:fs';const c=JSON.parse(fs.readFileSync('central-id-v2/battery/rules-catalog.json'));if(c.production_ready!==true)process.exit(1)"
           fi
@@ -62,6 +64,8 @@ jobs:
         run: npx --yes wrangler@4 deploy --config central-id-v2/battery/.wrangler.engine.generated.json
       - name: Set private Engine secret
         run: printf '%s' "$BATTERY_ENGINE_SECRET" | npx --yes wrangler@4 secret put BATTERY_ENGINE_SECRET --config central-id-v2/battery/.wrangler.engine.generated.json
+      - name: Set separate privileged issuer secret on private Engine only
+        run: printf '%s' "$BATTERY_CREDIT_ISSUER_SECRET" | npx --yes wrangler@4 secret put BATTERY_CREDIT_ISSUER_SECRET --config central-id-v2/battery/.wrangler.engine.generated.json
       - name: Deploy Battery Gateway only (not Central ID)
         run: npx --yes wrangler@4 deploy --config central-id-v2/battery/.wrangler.gateway.generated.json
       - name: Set Gateway-to-Engine secret
