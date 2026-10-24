@@ -93,7 +93,50 @@ export async function settle(db,c,action,time=nowMs()){
   return reply({error:"settlement_transaction_conflict_retry"},409);
  }
 }
+
+// Called only by a Cloudflare Cron Trigger on the PRIVATE Engine Worker.
+// A disconnected App must not leave its reserved battery locked forever.
+export async function sweepExpiredReservations(db,time=nowMs(),limit=50){
+ if(!Number.isSafeInteger(limit)||limit<1||limit>500)throw Error("invalid_sweep_limit");
+ const pending=await many(db,
+  "SELECT user_id,app_id,operation_id FROM battery_reservations WHERE state='reserved' AND deadline_at_ms<=? ORDER BY deadline_at_ms, reservation_id LIMIT ?",
+  time,limit);
+ let expired=0,failed=0;
+ for(const c of pending){
+  try{const r=await settle(db,c,"release",time);const body=await r.json();
+   if(r.status===200&&(body.status==="expired"||body.status==="released"))expired++;else failed++;
+  }catch{failed++;}
+ }
+ return {checked:pending.length,expired,failed};
+}
+// Expired *available* lots must be removed from the materialized wallet balance.
+// Compare-and-fail D1 CHECK guard prevents races with concurrent reservations.
+// Reserved lots are handled separately by sweepExpiredReservations.
+export async function sweepExpiredAvailableLots(db,time=nowMs(),limit=50){
+ if(!Number.isSafeInteger(limit)||limit<1||limit>500)throw Error("invalid_sweep_limit");
+ const lots=await many(db,
+  "SELECT lot_id,user_id,available_units FROM battery_lots WHERE expires_at_ms<=? AND available_units>0 ORDER BY expires_at_ms,lot_id LIMIT ?",
+  time,limit);
+ let cleared=0,failed=0;
+ for(const l of lots){
+  const ops=[
+   stmt(db,"UPDATE battery_lots SET available_units=CASE WHEN available_units=? AND expires_at_ms<=? THEN 0 ELSE -1 END WHERE lot_id=? AND user_id=?",
+    l.available_units,time,l.lot_id,l.user_id),
+   stmt(db,"UPDATE battery_wallets SET available_units=available_units-?,version=version+1 WHERE user_id=?",
+    l.available_units,l.user_id)
+  ];
+  try{await db.batch(ops);cleared++;}catch{failed++;}
+ }
+ return {checked:lots.length,cleared,failed};
+}
 export default{
+ async scheduled(_event,env){
+  if(!env?.BATTERY_DB?.batch)return;
+  // No secrets exposed, and no public endpoint. Cron is a platform-only trigger.
+  // Failed items are retried on the next tick. A small batch bounds D1 work.
+  await sweepExpiredReservations(env.BATTERY_DB);
+  await sweepExpiredAvailableLots(env.BATTERY_DB);
+ },
  async fetch(request,env){
   const url=new URL(request.url);
   if(request.method!=="POST"||!["/v1/reserve","/v1/commit","/v1/release"].includes(url.pathname))return reply({error:"not_found"},404);
