@@ -55,15 +55,17 @@ jobs:
         run: |
           node --check central-id-v2/battery/engine.mjs
           node --check central-id-v2/battery/worker.mjs
+          node --check central-id-v2/battery/archive.mjs
       - name: Verify independent Battery deployment configuration generator
         env:
           BATTERY_TARGET: preview
           BATTERY_D1_ID: "00000000-0000-4000-8000-000000000000"
           BATTERY_D1_NAME: "battery-ci-fixture"
+          BATTERY_R2_BUCKET: "starry-battery-ledger-ci-fixture"
         run: |
           node --check central-id-v2/battery/deploy/generate-config.mjs
           node central-id-v2/battery/deploy/generate-config.mjs
-          node --input-type=module -e "import fs from 'node:fs';const root='central-id-v2/battery/';const engine=JSON.parse(fs.readFileSync(root+'.wrangler.engine.generated.json'));const gateway=JSON.parse(fs.readFileSync(root+'.wrangler.gateway.generated.json'));if(engine.name!=='starry-battery-engine-preview'||gateway.name!=='starry-battery-gateway-preview'||engine.workers_dev!==false||gateway.services?.some(x=>x.service?.startsWith('hglobal')))process.exit(1)"
+          node --input-type=module -e "import fs from 'node:fs';const root='central-id-v2/battery/';const engine=JSON.parse(fs.readFileSync(root+'.wrangler.engine.generated.json'));const gateway=JSON.parse(fs.readFileSync(root+'.wrangler.gateway.generated.json'));if(engine.name!=='starry-battery-engine-preview'||gateway.name!=='starry-battery-gateway-preview'||engine.workers_dev!==false||gateway.services?.some(x=>x.service?.startsWith('hglobal'))||gateway.r2_buckets?.[0]?.bucket_name!=='starry-battery-ledger-ci-fixture')process.exit(1)"
           rm central-id-v2/battery/.wrangler.*.generated.json
       - name: Verify independently deployed Battery preview HTTP health
         if: github.event_name == 'pull_request'
