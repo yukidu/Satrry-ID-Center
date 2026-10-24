@@ -1,5 +1,6 @@
 import {portalRoute} from "./portal-auth.mjs";
 import {crossAppRoute} from "./cross-app-identity.mjs";
+import {demoRoute} from "./cross-app-demo.mjs";
 import { compatibility } from "./compat.mjs";
 // Central ID v2 public-only shell. No legacy DB, OAuth or private data access.
 // Deployment must remain read-only until auth / privacy / security gates pass.
@@ -19,6 +20,8 @@ function json(data, code=200) {
 export default {
   async fetch(request,env) {
     const url=new URL(request.url);
+    const demonstration=demoRoute(request);
+    if(demonstration)return demonstration;
     const firstParty=await crossAppRoute(request,env);
     if(firstParty)return firstParty;
     const portal=await portalRoute(request,env);
