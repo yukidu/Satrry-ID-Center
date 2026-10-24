@@ -8,7 +8,7 @@ const scopesFor=row=>new Set(String(row.scopes||"").split(" ").filter(Boolean));
 const sha256=async s=>Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(s)))).map(x=>x.toString(16).padStart(2,"0")).join("");
 const uidValid=u=>typeof u==="string"&&u.length>3&&u.length<180&&/^[A-Za-z0-9_-]+$/.test(u);
 async function verifiedPrincipal(request,env,needed){
- if(!env?.BATTERY_DB?.prepare||!env?.CENTRAL_AUTH_VERIFY?.fetch)return {error:"dependency_unavailable",status:503};
+ if(!env?.BATTERY_DB?.prepare||!env?.CENTRAL_AUTH_VERIFY?.fetch||typeof env?.CENTRAL_AUTH_CALLER_SECRET!=="string"||env.CENTRAL_AUTH_CALLER_SECRET.length<32)return {error:"dependency_unavailable",status:503};
  const id=request.headers.get("X-Battery-App-Id")||"";
  const match=/^Bearer ([A-Za-z0-9._~-]{32,512})$/.exec(request.headers.get("Authorization")||"");
  const userToken=request.headers.get("X-Central-Access-Token")||"";
@@ -37,14 +37,14 @@ async function verifiedPrincipal(request,env,needed){
  let reply;
  try{
   reply=await env.CENTRAL_AUTH_VERIFY.fetch(new Request("https://central-auth.internal/v1/introspect",{
-   method:"POST",headers:{"Authorization":"Bearer "+userToken,"Content-Type":"application/json","X-Battery-Caller":"starry"},
+   method:"POST",headers:{"Authorization":"Bearer "+userToken,"Content-Type":"application/json","X-Battery-Caller":"starry","X-Central-Service-Auth":env.CENTRAL_AUTH_CALLER_SECRET},
    body:JSON.stringify({required_brand:"starry"})}));
  }catch{return {error:"central_auth_unavailable",status:503};}
  if(reply.status>=500)return {error:"central_auth_unavailable",status:503};
  if(!reply.ok)return {error:"central_auth_rejected",status:403};
  let data;
  try{data=await reply.json();}catch{return {error:"invalid_central_auth_response",status:503};}
- if(data.active!==true||data.brand_allowed!==true||!uidValid(data.user_id)||data.suspended===true)return {error:"central_auth_rejected",status:403};
+ if(data.active!==true||data.brand_allowed!==true||!uidValid(data.user_id)||data.suspended!==false)return {error:"central_auth_rejected",status:403};
  return {appId:id,userId:data.user_id};
 }
 const operations={"reserve":"usage:reserve","commit":"usage:commit","release":"usage:release"};
