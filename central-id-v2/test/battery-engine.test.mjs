@@ -80,6 +80,36 @@ test("cancel releases reservation and allocates all units back in one batch",asy
  assert.equal(db.batches[0].filter(x=>x.sql.startsWith("UPDATE battery_lots")).length,2);
  assert.equal(db.batches[0].filter(x=>x.sql.includes("INSERT INTO battery_ledger")).length,0);
 });
+test("release never resurrects expired reserved lots in spendable wallet",async()=>{
+ const existing={...c,reservation_id:"res-123",state:"reserved",deadline_at_ms:300000};
+ const db=dbWith({existing,allocations:[{lot_id:"early",quantity:2,expires_at_ms:900},{lot_id:"late",quantity:2,expires_at_ms:200000}]});
+ const r=await json(await settle(db,c,"release",1000));
+ assert.equal(r.code,200);
+ assert.equal(r.data.status,"released");
+ const ops=db.batches[0];
+ const w=ops.find(x=>x.sql.startsWith("UPDATE battery_wallets"));
+ assert.equal(w.args[0],4,"all reserved units are cleared");
+ assert.equal(w.args[1],2,"only non-expired units can become spendable");
+ const lots=ops.filter(x=>x.sql.startsWith("UPDATE battery_lots"));
+ assert.deepEqual(lots.map(x=>x.args.slice(0,2)),[[2,0],[2,2]]);
+});
+test("commit is forbidden if any reserved source lot has expired",async()=>{
+ const existing={...c,reservation_id:"res-123",state:"reserved",deadline_at_ms:300000};
+ const db=dbWith({existing,allocations:[{lot_id:"early",quantity:2,expires_at_ms:999},{lot_id:"late",quantity:2,expires_at_ms:200000}]});
+ const r=await json(await settle(db,c,"commit",1000));
+ assert.equal(r.code,409);
+ assert.equal(r.data.error,"reservation_lot_expired_must_release");
+ assert.equal(db.batches.length,0);
+});
+test("timeout release never returns expired units as spendable",async()=>{
+ const existing={...c,reservation_id:"res-123",state:"reserved",deadline_at_ms:1100};
+ const db=dbWith({existing,allocations:[{lot_id:"early",quantity:4,expires_at_ms:1150}]});
+ const r=await json(await settle(db,c,"release",1200));
+ assert.equal(r.code,200);
+ assert.equal(r.data.status,"expired");
+ const w=db.batches[0].find(x=>x.sql.startsWith("UPDATE battery_wallets"));
+ assert.equal(w.args[1],0);
+});
 test("private engine fails closed without secret or configured D1",async()=>{
  const req=new Request("https://battery-engine.internal/v1/reserve",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(c)});
  const r=await json(await engine.fetch(req,{}));
