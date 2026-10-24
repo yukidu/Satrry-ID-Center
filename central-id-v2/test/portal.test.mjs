@@ -117,3 +117,63 @@ test("confirmed logout revokes the central session and clears browser cookie",as
  assert.equal(alreadyAbsent.status,200);
  assert.match(alreadyAbsent.headers.get("Set-Cookie"),/Max-Age=0/);
 });
+
+test("central all-devices sign-out requires same-origin and a live portal session",async()=>{
+ const route="/api/v1/portal/logout-all",validCookie="central_id_portal="+"A".repeat(43);
+ const evil=await app.fetch(req(route,{method:"POST",headers:{Origin:"https://evil.example",Cookie:validCookie}}));
+ assert.equal(evil.status,403);
+ const noDb=await app.fetch(req(route,{method:"POST",headers:{Origin:base,Cookie:validCookie}}));
+ assert.equal(noDb.status,503);
+ assert.equal(noDb.headers.get("Set-Cookie"),null);
+ const wrongMethod=await app.fetch(req(route,{method:"GET",headers:{Origin:base,Cookie:validCookie}}));
+ assert.equal(wrongMethod.status,405);
+ const unauth=await app.fetch(req(route,{method:"POST",headers:{Origin:base}}),{CENTRAL_DB:{batch:async()=>{throw Error("should not write")},prepare(){return {bind(){return {first:async()=>null}}}}}});
+ assert.equal(unauth.status,401);
+});
+test("central all-devices sign-out atomically rotates auth_version and revokes all Central sessions",async()=>{
+ const route="/api/v1/portal/logout-all",validCookie="central_id_portal="+"A".repeat(43);
+ let operations=[],batched=0;
+ const db={
+  prepare(sql){
+   if(sql.includes("FROM auth_sessions s JOIN identity_users")){
+    return {bind:()=>({first:async()=>({user_id:"user-central-123",auth_version:1,issued_auth_version:1,membership_status:"approved",suspended_at_ms:null,deleted_at_ms:null,display_name:"Test",record_version:1})})};
+   }
+   if(sql.includes("SELECT legacy_user_id FROM compat_legacy_principals")){
+    return {bind:()=>({first:async()=>null})};
+   }
+   return {bind:(...args)=>({sql,args})};
+  },
+  async batch(statements){
+   batched++;
+   operations=statements;
+   return [{success:true,results:[{auth_version:2}]},{success:true,results:[],meta:{changes:2}}];
+  }
+ };
+ const res=await app.fetch(req(route,{method:"POST",headers:{Origin:base,Cookie:validCookie}}),{CENTRAL_DB:db});
+ assert.equal(res.status,200);
+ assert.deepEqual(await res.json(),{ok:true,central_devices_signed_out:true});
+ assert.equal(batched,1);
+ assert.equal(operations.length,2);
+ assert.match(operations[0].sql,/auth_version=auth_version\+1/);
+ assert.match(operations[0].sql,/UPDATE identity_users/);
+ assert.match(operations[1].sql,/UPDATE auth_sessions SET revoked_at_ms/);
+ for(const stmt of operations)assert.equal(stmt.args.at(-1),"user-central-123");
+ assert.match(res.headers.get("Set-Cookie"),/HttpOnly; Secure; SameSite=Lax/);
+ assert.match(res.headers.get("Set-Cookie"),/Max-Age=0/);
+});
+test("all-devices logout D1 failures never clear a usable browser cookie",async()=>{
+ const route="/api/v1/portal/logout-all",validCookie="central_id_portal="+"A".repeat(43);
+ const db={
+  prepare(sql){
+   if(sql.includes("FROM auth_sessions s JOIN identity_users")){
+    return {bind:()=>({first:async()=>({user_id:"u1234567",auth_version:1,issued_auth_version:1,membership_status:"approved",suspended_at_ms:null,deleted_at_ms:null})})};
+   }
+   if(sql.includes("SELECT legacy_user_id FROM compat_legacy_principals"))return {bind:()=>({first:async()=>null})};
+   return {bind:()=>({})};
+  },
+  async batch(){throw Error("isolated D1 offline");}
+ };
+ const res=await app.fetch(req(route,{method:"POST",headers:{Origin:base,Cookie:validCookie}}),{CENTRAL_DB:db});
+ assert.equal(res.status,503);
+ assert.equal(res.headers.get("Set-Cookie"),null);
+});
