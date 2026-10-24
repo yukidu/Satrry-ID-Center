@@ -62,18 +62,41 @@ ON CONFLICT(center_code) DO UPDATE SET display_name=excluded.display_name,is_act
 INSERT INTO education_centers(center_code,display_name,is_active) VALUES('EC-032','其他',1)
 ON CONFLICT(center_code) DO UPDATE SET display_name=excluded.display_name,is_active=1;
 
--- In existing production snapshot there are no admin_role_grants rows/table.
--- This grant store is introduced before automatic removal of CENTER-SCOPED roles;
--- protected global highest-admin grants have NULL scope_key and are not revoked.
+-- Only non-protected CENTRE-SCOPED appointments are stored in this table.
+-- NEVER treat a record in admin_role_grants as a source of highest administrator
+-- authority, even if an earlier database/version contained a forged role_code.
+-- Roles and their permitted actions still require later backend allowlist review.
 CREATE TABLE IF NOT EXISTS admin_role_grants (
  grant_id TEXT PRIMARY KEY NOT NULL,
  user_id TEXT NOT NULL REFERENCES identity_users(user_id) ON DELETE RESTRICT,
- role_code TEXT NOT NULL,
- scope_key TEXT,
+ role_code TEXT NOT NULL
+   CHECK(role_code NOT IN ('super_admin','hglobal_secretary','超級管理員','寰宇秘書')),
+ scope_key TEXT NOT NULL REFERENCES education_centers(center_code),
  granted_at_ms INTEGER NOT NULL,
- revoked_at_ms INTEGER
+ revoked_at_ms INTEGER,
+ CHECK(length(trim(role_code))>0)
 );
 CREATE INDEX IF NOT EXISTS idx_admin_grants_user_active ON admin_role_grants(user_id,revoked_at_ms);
+
+-- Protected highest administrators are DISTINCT from revocable center roles.
+-- The two identities must be provisioned by explicit audited owner approval
+-- in a separate controlled procedure, never from profile-edit/API payload.
+-- No administrator user_id is seeded by this migration.
+-- Rows cannot be transferred/removed through ordinary SQL updates or deletes;
+-- a future break-glass recovery procedure needs separate explicit authorization.
+CREATE TABLE IF NOT EXISTS protected_admin_principals (
+ role_code TEXT PRIMARY KEY NOT NULL
+   CHECK(role_code IN ('super_admin','hglobal_secretary')),
+ user_id TEXT NOT NULL UNIQUE REFERENCES identity_users(user_id) ON DELETE RESTRICT,
+ bound_at_ms INTEGER NOT NULL CHECK(bound_at_ms>0),
+ authorization_reference TEXT NOT NULL CHECK(length(trim(authorization_reference))>=8)
+);
+CREATE TRIGGER IF NOT EXISTS trg_protected_admin_no_update
+BEFORE UPDATE ON protected_admin_principals
+BEGIN SELECT RAISE(ABORT,'protected_admin_immutable'); END;
+CREATE TRIGGER IF NOT EXISTS trg_protected_admin_no_delete
+BEFORE DELETE ON protected_admin_principals
+BEGIN SELECT RAISE(ABORT,'protected_admin_immutable'); END;
 CREATE TABLE IF NOT EXISTS member_center_change_events (
  event_id INTEGER PRIMARY KEY AUTOINCREMENT,
  user_id TEXT NOT NULL REFERENCES identity_users(user_id),
