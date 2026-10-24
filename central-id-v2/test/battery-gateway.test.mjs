@@ -59,6 +59,7 @@ test("per-App quota rejects with HTTP 429 before contacting central identity",as
 test("caller cannot forge user identity in reserve payload",async()=>{
  const env=makeEnv(await hash(token),"usage:reserve");
  env.BATTERY_ENGINE={async fetch(){throw Error("must not be called")}};
+ env.BATTERY_ENGINE_SECRET="test-private-engine-key-".repeat(2);
  const response=await gateway.fetch(new Request(base+"/v1/battery/reserve",{
   method:"POST",
   headers:{"X-Battery-App-Id":"starry_echo","Authorization":"Bearer "+token,"X-Central-Access-Token":"verified-user-token","Content-Type":"application/json"},
