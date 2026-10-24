@@ -1,0 +1,39 @@
+name: Central ID center migration read-only audit
+
+# Manual-only schema preflight. Does NOT migrate, deploy or mutate either Central or Battery.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Central ID D1 target for schema inspection only"
+        required: true
+        type: choice
+        options: [preview, production]
+
+permissions:
+  contents: read
+
+# Read-only audit must not replace or cancel an existing production deployment.
+concurrency:
+  group: ${{ inputs.target == 'production' && 'central-prod-schema-audit' || 'central-preview-schema-audit' }}
+  cancel-in-progress: false
+
+jobs:
+  check-central-schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: ${{ inputs.target == 'production' && 'production-central-id' || 'central-preview' }}
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN_CENTRAL: ${{ secrets.CLOUDFLARE_API_TOKEN_CENTRAL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify Central-only read-only safeguards
+        run: node --test central-id-v2/test/central-center-migration-readiness.test.mjs
+      - name: Inspect Central D1 baseline without changing data
+        run: node central-id-v2/release/verify-central-center-migration.mjs "${{ inputs.target }}"
+      - name: This did not authorize migration
+        run: echo 'Central D1 metadata and aggregate counts were inspected only. Migration and Production deployment remain blocked pending independent approval.'
