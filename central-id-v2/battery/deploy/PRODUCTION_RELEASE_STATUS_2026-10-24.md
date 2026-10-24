@@ -50,3 +50,12 @@
 
 ### 中央 AI 已實際有進度（唯讀查核）
 中央獨立 Draft PR #40（https://github.com/yukidu/Satrry-ID-Center/pull/40）已建立受保護私有 Auth 候選 Worker／中央 sandbox D1，11/11 隔離 E2E PASS，但**仍無可用的正式短期 token issuer、正式 D1 migration 或正式 Battery 可用驗證服務**。Battery PR #37 已加入中央額外要求的 `X-Central-Service-Auth` Header，以及 `CENTRAL_AUTH_CALLER_SECRET` 缺失 fail-closed，GitHub CI 通過。不可用中央 Sandbox 處理正式會員身份。
+
+## 私有 Production Service Binding 確認｜Cloudflare 真實 6/6 PASS（2026-10-24）
+- 使用全新私有測試 Worker `starry-battery-prod-dark-smoke-private-20261024`（沒有 Workers.dev/public/Preview URL）以 Service Binding 呼叫真正的三個 Production Battery Workers。
+- **測試報告只寫入獨立 Battery E2E D1 `starry-battery-overdraft-e2e-20261024`**，不寫正式會員錢包或正式 Production D1。
+- `run_id=battery-dark-production-smoke-20261024-01`，**6/6 PASS**：正式 Gateway 健康 200、無中央驗證錢包拒絕 503、Gateway 不提供 Credit Endpoint 404、Engine 未設定扣款 Secret 拒絕 503、Engine 未設定入帳 Secret 拒絕 503、Archive 無公開 Handler 404。
+- 已透過 Cloudflare GET 確認上述 Cron 完全停用 `schedules=[]`，試驗 Worker 維持私有。三個正式 Worker 的公開及預覽網址均為 `false`，Engine／Archive Cron 為 0。
+- 測試後再次唯讀查 Production D1：wallets/apps/ledger/debts/credits/archives **全部 0**。最新 D1 Time Travel rollback bookmark：`00000002-00000000-0000510e-dcf2a5a31fc178bdc96a3309161b7694`（僅記錄測試當下，實際復原需按正式事故 SOP 驗證並慎防覆寫）。
+- Battery Gateway 候選已追上中央私有 PR #40 要求，必填 `X-Central-Service-Auth`（來源 `CENTRAL_AUTH_CALLER_SECRET`，不得洩露），缺中央 binding/Caller Secret 一律 fail closed。中央 PR #40 私有 sandbox 11/11 E2E PASS，但真正用戶 token issuer、中央 Production D1 及兩邊跨 App Auth E2E 尚未正式完成。
+- **此測試證明安全的暗部署有效，不代表已可讓會員交易。Production release 狀態仍為 blocked/off。**
