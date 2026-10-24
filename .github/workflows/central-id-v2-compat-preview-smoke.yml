@@ -3,7 +3,12 @@ name: Central ID v2 Echo compatibility preview smoke
 on:
   pull_request:
     paths:
-      - "central-id-v2/**"
+      - "central-id-v2/src/**"
+      - "central-id-v2/echo-adapter/**"
+      - "central-id-v2/migrations/**"
+      - "central-id-v2/test/portal*.test.mjs"
+      - "central-id-v2/test/center*.test.mjs"
+      - "central-id-v2/release/**"
       - ".github/workflows/central-id-v2-compat-preview-smoke.yml"
 
 permissions:
