@@ -134,7 +134,32 @@ remain where they are. Do not delete, duplicate, reset or remigrate production D
 8. Only after acceptance archive/close old PR #37 and remove old Battery source through a reviewed Central-owned cleanup PR.
 EOF
 
-git add .github .gitignore STANDALONE_MIGRATION.md
+# Keep legacy specifications for audit, but make new code ownership unmistakable.
+python3 - <<'PY'
+from pathlib import Path
+p = Path("README.md")
+legacy = p.read_text(encoding="utf-8")
+header = """# Starry Battery｜獨立 GitHub 儲存庫
+
+**此 Repository 為 Starry Battery 程式碼新權威來源**：
+https://github.com/yukidu/starry-battery
+
+中央會員系統請至：https://github.com/yukidu/hglobal-id
+
+此代碼由原 \`central-id-v2/battery/\` 安全抽出。以下舊 PR #37、
+原路徑或正式上線說明保留為歷史資料，不代表本 Repo 的目前 PR 狀態。
+**正式 Battery 交易目前未啟用；Cloudflare D1/R2/Workers 完全不因 GitHub 拆分而重建。**
+
+參考本 Repo 的 \`STANDALONE_MIGRATION.md\` 及 \`deploy/battery-targets.json\`
+核對 CI、Cloudflare 與正式啟用關卡。
+
+---
+
+"""
+p.write_text(header + legacy, encoding="utf-8")
+PY
+
+git add .github .gitignore README.md STANDALONE_MIGRATION.md
 git commit -q -m "chore: bootstrap standalone Starry Battery CI and independent release workflows"
 
 echo "Running isolated Battery tests and migration checks..."
