@@ -5,7 +5,15 @@ CREATE TABLE IF NOT EXISTS battery_app_clients (
  token_sha256 TEXT NOT NULL CHECK(length(token_sha256)=64),
  scopes TEXT NOT NULL DEFAULT 'balance:read',
  enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN(0,1)),
+ rate_limit_per_minute INTEGER NOT NULL DEFAULT 120 CHECK(rate_limit_per_minute BETWEEN 1 AND 10000),
  created_at_ms INTEGER NOT NULL
+);
+-- Limit is scoped to each trusted Starry App, not a member account. Periodic retention pruning is required.
+CREATE TABLE IF NOT EXISTS battery_app_rate_limits (
+ app_id TEXT NOT NULL REFERENCES battery_app_clients(app_id),
+ window_start_ms INTEGER NOT NULL,
+ request_count INTEGER NOT NULL DEFAULT 0 CHECK(request_count>=0),
+ PRIMARY KEY (app_id,window_start_ms)
 );
 CREATE TABLE IF NOT EXISTS battery_wallets (
  user_id TEXT PRIMARY KEY NOT NULL,
