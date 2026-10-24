@@ -1,0 +1,127 @@
+name: Starry Battery isolated change guard
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "central-id-v2/battery/**"
+      - ".github/workflows/starry-battery-isolation.yml"
+      - ".github/workflows/starry-battery-deploy.yml"
+      - ".github/workflows/starry-battery-production-preflight.yml"
+  push:
+    branches: [main]
+    paths:
+      - "central-id-v2/battery/**"
+      - ".github/workflows/starry-battery-isolation.yml"
+      - ".github/workflows/starry-battery-deploy.yml"
+      - ".github/workflows/starry-battery-production-preflight.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: battery-guard-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  battery-change-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify Battery-only pull request ownership
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -eu
+          git diff --name-only "$BASE_SHA" "$HEAD_SHA" > /tmp/changed.txt
+          cat /tmp/changed.txt
+          if grep -Ev '^(central-id-v2/battery/|\.github/workflows/starry-battery-(isolation|deploy|production-preflight)\.yml$)' /tmp/changed.txt; then
+            echo 'ERROR: Battery-only PR modifies shared or Central ID files; open a separate cross-domain PR.'
+            exit 1
+          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Battery engine, Gateway and rule unit tests
+        run: node --test central-id-v2/battery/test/*.test.mjs
+      - name: Battery schema constraint tests
+        run: python3 central-id-v2/battery/test/battery_schema_test.py
+      - name: Battery isolated migration tests
+        run: python3 central-id-v2/battery/test/battery_migration_test.py
+      - name: Verify standalone extraction script and safe Repo boundary
+        run: |
+          bash -n central-id-v2/battery/deploy/bootstrap-standalone-repo.sh
+          node --input-type=module -e "import fs from 'node:fs';const s=fs.readFileSync('central-id-v2/battery/deploy/bootstrap-standalone-repo.sh','utf8');if(!s.includes('git subtree split')||!s.includes('yukidu/starry-battery')||!s.includes('git push --porcelain')||s.includes('git push --force'))process.exit(1);"
+          test -f central-id-v2/battery/deploy/STANDALONE_SPLIT_HANDOFF_2026-10-24.md
+      - name: Engine and Gateway syntax
+        run: |
+          node --check central-id-v2/battery/engine.mjs
+          node --check central-id-v2/battery/worker.mjs
+          node --check central-id-v2/battery/archive.mjs
+      - name: Verify independent Battery deployment configuration generator
+        env:
+          BATTERY_TARGET: preview
+          BATTERY_D1_ID: "00000000-0000-4000-8000-000000000000"
+          BATTERY_D1_NAME: "battery-ci-fixture"
+          BATTERY_R2_BUCKET: "starry-battery-ledger-ci-fixture"
+        run: |
+          node --check central-id-v2/battery/deploy/generate-config.mjs
+          node central-id-v2/battery/deploy/generate-config.mjs
+          node --input-type=module -e "import fs from 'node:fs';const root='central-id-v2/battery/';const engine=JSON.parse(fs.readFileSync(root+'.wrangler.engine.generated.json'));const gateway=JSON.parse(fs.readFileSync(root+'.wrangler.gateway.generated.json'));if(engine.name!=='starry-battery-engine-preview'||gateway.name!=='starry-battery-gateway-preview'||engine.workers_dev!==false||gateway.services?.some(x=>x.service?.startsWith('hglobal'))||gateway.r2_buckets?.[0]?.bucket_name!=='starry-battery-ledger-ci-fixture')process.exit(1)"
+          rm central-id-v2/battery/.wrangler.*.generated.json
+      - name: Verify independently deployed Battery preview HTTP health
+        if: github.event_name == 'pull_request'
+        run: |
+          set -eu
+          curl --fail --silent --show-error --retry 3 --max-time 15 \
+            https://starry-battery-gateway-preview-v2-20261024.yukidu.workers.dev/health \
+            -o /tmp/battery-health.json
+          node --input-type=module -e "import fs from 'node:fs';const o=JSON.parse(fs.readFileSync('/tmp/battery-health.json'));if(o.service!=='starry-battery-gateway'||o.status!=='reachable')process.exit(1)"
+      - name: Preview refuses unauthenticated Battery access
+        if: github.event_name == 'pull_request'
+        run: |
+          set -eu
+          code="$(curl --silent --show-error --retry 3 --max-time 15 --output /tmp/battery-denied.json --write-out '%{http_code}' https://starry-battery-gateway-preview-v2-20261024.yukidu.workers.dev/v1/battery/wallet)"
+          test "$code" = "503"
+          node --input-type=module -e "import fs from 'node:fs';const x=JSON.parse(fs.readFileSync('/tmp/battery-denied.json'));if(x.error!=='dependency_unavailable')process.exit(1)"
+      - name: Confirm no production deployment in this workflow
+        run: |
+          echo 'Guard only: no Cloudflare credentials, migrations, or production deployment.'
+
+  standalone-subtree-dry-run:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Extract actual Battery commit history without pushing
+        run: |
+          set -eu
+          sha="$(git subtree split --prefix=central-id-v2/battery HEAD)"
+          test -n "$sha"
+          git worktree add -q --detach /tmp/starry-battery-extracted "$sha"
+          test -f /tmp/starry-battery-extracted/engine.mjs
+          test -f /tmp/starry-battery-extracted/worker.mjs
+          test -f /tmp/starry-battery-extracted/schema.sql
+          test ! -d /tmp/starry-battery-extracted/central-id-v2/src
+      - name: Run Battery tests directly at future new Repo root
+        working-directory: /tmp/starry-battery-extracted
+        run: |
+          node --test test/*.test.mjs
+          python3 test/battery_schema_test.py
+          python3 test/battery_migration_test.py
+          node --check engine.mjs
+          node --check worker.mjs
+          node --check archive.mjs
+      - name: Confirm dry-run never published or touched Production
+        run: echo 'Validated Git subtree extraction locally; no GitHub push, Cloudflare API or Production action.'
