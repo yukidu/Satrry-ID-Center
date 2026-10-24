@@ -17,6 +17,7 @@ on:
       - "central-id-v2/test/portal*.test.mjs"
       - "central-id-v2/test/center*.test.mjs"
       - "central-id-v2/test/ios_catalog_schema_test.py"
+      - "central-id-v2/test/first_party_identity_schema_test.py"
       - "central-id-v2/test/center_migration_schema_test.py"
       - "central-id-v2/test/central-release-boundary.test.mjs"
       - "central-id-v2/test/central-center-migration-readiness.test.mjs"
@@ -34,6 +35,7 @@ on:
       - "central-id-v2/test/portal*.test.mjs"
       - "central-id-v2/test/center*.test.mjs"
       - "central-id-v2/test/ios_catalog_schema_test.py"
+      - "central-id-v2/test/first_party_identity_schema_test.py"
       - "central-id-v2/test/center_migration_schema_test.py"
       - "central-id-v2/test/central-release-boundary.test.mjs"
       - "central-id-v2/test/central-center-migration-readiness.test.mjs"
@@ -79,6 +81,7 @@ jobs:
             central-id-v2/test/index.test.mjs
             central-id-v2/test/portal.test.mjs
             central-id-v2/test/portal-signup.test.mjs
+            central-id-v2/test/portal-cross-app-api.test.mjs
           )
           for optional in central-id-v2/test/center-catalog.test.mjs \
                           central-id-v2/test/center-route.test.mjs \
@@ -93,6 +96,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 central-id-v2/test/ios_catalog_schema_test.py
+          python3 central-id-v2/test/first_party_identity_schema_test.py
           if [[ -f central-id-v2/test/center_migration_schema_test.py ]]; then
             python3 central-id-v2/test/center_migration_schema_test.py
           fi
