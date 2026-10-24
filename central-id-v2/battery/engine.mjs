@@ -23,7 +23,7 @@ function summary(r,idempotent=false){return {operation_id:r.operation_id,reserva
 
 // Wallet available_units and lots remain nonnegative; actual debt is exclusively
 // accounted for in battery_overdraft_accounts.debt_units.
-export async function reserve(db,c,time=nowMs()){
+export async function reserve(db,c,time=nowMs(),allowOverdraft=true){
  if(!validQuantity(c.quantity))return reply({error:"invalid_quantity"},400);
  const old=await record(db,c);
  if(old){if(!same(old,c)||old.quantity!==c.quantity)return reply({error:"operation_conflict"},409);return reply(summary(old,true));}
@@ -40,6 +40,7 @@ export async function reserve(db,c,time=nowMs()){
   if(due===0)break;
  }
  const overdraft=due>0;
+ if(overdraft&&!allowOverdraft)return reply({error:"overdraft_temporarily_disabled"},409);
  if(overdraft&&(Number(account?.successful_uses||0)>=2||account?.active_reservation_id))
   return reply({error:account?.active_reservation_id?"overdraft_already_in_progress":"overdraft_opportunities_exhausted"},409);
  // Reject any single operation that would exceed JS safe integer bookkeeping.
@@ -220,6 +221,10 @@ export default{
   if(!env?.BATTERY_DB?.batch||typeof secret!=="string"||secret.length<32)return reply({error:credit?"credit_issuer_not_configured":"engine_not_configured"},503);
   const auth=request.headers.get(credit?"X-Battery-Credit-Authorization":"X-Battery-Internal-Authorization")||"";
   if(auth.length>1024||!auth.startsWith("Bearer ")||!await secureEqual(auth.slice(7),secret))return reply({error:"internal_access_denied"},403);
+  // Fail closed even if a secret is accidentally provisioned before Production acceptance.
+  // release stays available for cleanup of an existing reservation during a pause.
+  if(credit&&env?.BATTERY_CREDIT_ENABLED!=="true")return reply({error:"credit_issuance_disabled"},503);
+  if(!credit&&url.pathname!=="/v1/release"&&env?.BATTERY_OPERATIONS_ENABLED!=="true")return reply({error:"battery_operations_disabled"},503);
   if(!/^application\/json(?:;|$)/i.test(request.headers.get("Content-Type")||""))return reply({error:"unsupported_content_type"},415);
   let c;
   try{const raw=await request.text();if(raw.length>2048)return reply({error:"request_too_large"},413);c=JSON.parse(raw);}
@@ -232,7 +237,7 @@ export default{
      !Number.isSafeInteger(c.expires_at_ms)||c.expires_at_ms<=Date.now()):
      (!reId.test(c.operation_id||"")||!reApp.test(c.app_id||"")||!reUser.test(c.user_id||"")||
       (action==="reserve"&&!validQuantity(c.quantity)))))return reply({error:credit?"invalid_credit":"invalid_operation"},400);
-  try{return credit?await applyCredit(env.BATTERY_DB,c):action==="reserve"?await reserve(env.BATTERY_DB,c):await settle(env.BATTERY_DB,c,action);}
+  try{return credit?await applyCredit(env.BATTERY_DB,c):action==="reserve"?await reserve(env.BATTERY_DB,c,nowMs(),env?.BATTERY_OVERDRAFT_ENABLED==="true"):await settle(env.BATTERY_DB,c,action);}
   catch{return reply({error:"engine_database_unavailable"},503);}
  }
 };
