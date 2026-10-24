@@ -9,7 +9,10 @@ const auth=(headers={})=>new Request(base+"/v1/battery/wallet",{headers:{"X-Batt
 function makeEnv(expectedHash,scopes="balance:read",quotaAllowed=true,centralResponse={active:true,brand_allowed:true,user_id:"user_123",suspended:false},centralStatus=200){
  let count=0;
  return {get calls(){return count;},
-  BATTERY_DB:{prepare(sql){return{bind(...args){return{async first(){
+  BATTERY_DB:{prepare(sql){return{bind(...args){return{async all(){
+    if(sql.includes("FROM battery_ledger")||sql.includes("FROM battery_archive_index"))return {results:[]};
+    throw Error("unexpected archive SQL "+sql);
+  },async first(){
     count++;
     if(sql.includes("battery_app_clients"))return args[0]==="starry_echo"&&args[1]===expectedHash?{app_id:"starry_echo",scopes}:null;
     if(sql.includes("battery_app_rate_limits"))return quotaAllowed?{request_count:1}:null;
@@ -98,4 +101,19 @@ test("Central authorization outages fail closed with retryable service error",as
  const r=await gateway.fetch(auth(),env);
  assert.equal(r.status,503);
  assert.equal((await r.json()).error,"central_auth_unavailable");
+});
+
+test("ledger requires private archived history binding and strictly verifies cursors",async()=>{
+ const env=makeEnv(await hash(token),"ledger:read");
+ const req=path=>new Request(base+path,{headers:{"X-Battery-App-Id":"starry_echo","Authorization":"Bearer "+token,"X-Central-Access-Token":"verified-user-token"}});
+ const blocked=await gateway.fetch(req("/v1/battery/ledger"),env);
+ assert.equal(blocked.status,503);
+ assert.equal((await blocked.json()).error,"archive_binding_unavailable");
+ env.BATTERY_ARCHIVE_R2={async get(){throw Error("test archive has no indexed objects")}};
+ const ok=await gateway.fetch(req("/v1/battery/ledger"),env);
+ assert.equal(ok.status,200);
+ assert.deepEqual(await ok.json(),{entries:[],limit:50,next_cursor:null});
+ const malformed=await gateway.fetch(req("/v1/battery/ledger?before_ms=abc"),env);
+ assert.equal(malformed.status,400);
+ assert.equal((await malformed.json()).error,"invalid_ledger_cursor");
 });
