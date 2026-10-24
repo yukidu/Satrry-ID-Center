@@ -17,7 +17,7 @@
 
 應用名稱：H-Global 中央會員 ID；External；支援與開發者 Email：hglobal1985@gmail.com；授權網域：hglobal1985.com。
 Web Client 名稱：H-Global Central ID Web；正式 JavaScript origin：https://id.hglobal1985.com。
-新 Client ID（帳號持有人提供）：`791614645185-vbaqqbnr463r1vi4ga41uh73s7eg0gv5.apps.googleusercontent.com`。已設定 Preview，尚未驗證 Google Console origins 與真實登入。
+新 Client ID（帳號持有人提供）：`791614645185-vbaqqbnr463r1vi4ga41uh73s7eg0gv5.apps.googleusercontent.com`。已設定 Preview；帳號持有人補上 Preview origin 後，已回報成功登入並提供 /dashboard 截圖。正式 origin 與完整 Console 設定尚未逐項核實。
 
 Google 官方 OAuth 最佳實務明確要求 Console 建立及修改一般 OAuth client，不能承諾提供自動建立、修改或刪除這些 client 的公開 API。IAP 或 IAM 同名 OAuth 介面不得當成一般 Google Sign-In client API。
 
@@ -123,7 +123,7 @@ Cloud IAM 與使用者 Google 資料授權分開：WIF 不會自動授權 Gmail 
 - Google CLI 登入與 IAM/API 盤點已完成；配額完整盤點待完成。
 - 新 Google OAuth client 與政策／網域驗證。
 - 管理介面實作、部署、專用身分核准、機密儲存與稽核持久化。
-- Cloudflare Preview 新 client 真實登入與 Echo 回歸。
+- Preview 新 client 真實登入已由帳號持有人驗證；登出／重新登入及 Echo 回歸仍待驗證。
 - PR CI、安全檢查、合併、Production 切換與實測。
 - H-Global 官方使用者服務連接、一般 ChatGPT 的 Cloud + 使用者服務兩項端到端驗收。
 
@@ -151,3 +151,9 @@ Cloud IAM 與使用者 Google 資料授權分開：WIF 不會自動授權 Gmail 
 2026-10-23：Cloudflare 上傳成功（HTTP 200），deployment_id `81ffdcc3110143a6993b71f993b9e44b`。部署目標僅 `hglobal-central-id-v2-preview`，程式為 PR #31 的隔離版本；設定回讀確認 HGLOBAL_GOOGLE_CLIENT_ID 等於帳號持有人提供的新 ID。保留 Preview 的 CENTRAL_DB、LEGACY_AUTH_DB 與 ECHO_TICKETS_ENABLED 設定。唯讀 schema 查詢確認 portal 所需資料表已存在，rows_written=0，未執行遷移。
 
 自動 HTTP 檢查 `/login`、`/api/v1/portal/challenge`、`/api/v1/compat/readiness` 仍均為 403，原因未確認，不能當作真實登入成功。下一步由帳號持有人開啟 https://hglobal-central-id-v2-preview.yukidu.workers.dev/login 測試並回報畫面。Production 未部署，PR 未合併，Starry client 未修改。
+
+## 2026-10-24 驗收更新
+
+帳號持有人先遇到 Google `400 origin_mismatch`，新增 Preview JavaScript origin 後回報「可以登入」，並提供 Preview `/dashboard` 截圖。截圖顯示登入者會員控制台與訪客／未核准狀態；記為人工真實登入通過，不公開截圖中的姓名或 user_id。此證據不等同登出撤銷、既有會員映射穩定或 Echo 回歸均通過。
+
+本輪重新讀取正式 Worker 設定成功：仍未設定 HGLOBAL_GOOGLE_CLIENT_ID；CENTRAL_DB 與 LEGACY_AUTH_DB 是不同資料庫。沒有執行正式部署或更動資料庫。PR #31 仍為 Draft。正式切換前需完成 Preview 登出後重新整理 dashboard 會要求登入、再次登入成功，以及原 Echo Google 登入正常之驗收。
