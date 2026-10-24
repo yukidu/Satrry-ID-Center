@@ -1,0 +1,45 @@
+name: Starry Battery isolated change guard
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "central-id-v2/battery/**"
+      - ".github/workflows/starry-battery-isolation.yml"
+  push:
+    branches: [main]
+    paths:
+      - "central-id-v2/battery/**"
+      - ".github/workflows/starry-battery-isolation.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: battery-guard-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  battery-change-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify Battery-only pull request ownership
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -eu
+          git diff --name-only "$BASE_SHA" "$HEAD_SHA" > /tmp/changed.txt
+          cat /tmp/changed.txt
+          if grep -Ev '^(central-id-v2/battery/|\.github/workflows/starry-battery-isolation\.yml$)' /tmp/changed.txt; then
+            echo 'ERROR: Battery-only PR modifies shared or Central ID files; open a separate cross-domain PR.'
+            exit 1
+          fi
+      - name: Confirm no production deployment in this workflow
+        run: |
+          echo 'Guard only: no Cloudflare credentials, migrations, or production deployment.'
