@@ -126,7 +126,7 @@ test("Central issuer rechecks live session and Starry brand grant in one atomic 
  assert.equal(captured[1],now);
  assert.equal(captured[2],now+DEFAULT_TTL_MS);
  assert.match(sql,/INSERT INTO central_service_access_tokens/);
- assert.match(sql,/JOIN auth_sessions s/);
+ assert.match(sql,/FROM auth_sessions s/);
  assert.match(sql,/s\.revoked_at_ms IS NULL/);
  assert.match(sql,/s\.issued_auth_version=u\.auth_version/);
  assert.match(sql,/u\.membership_status='approved'/);
