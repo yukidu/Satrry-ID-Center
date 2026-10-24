@@ -154,7 +154,7 @@ test("private engine rejects clients with wrong secret",async()=>{
 });
 test("private engine rejects forged extra identity fields even with valid secret",async()=>{
  const req=new Request("https://battery-engine.internal/v1/reserve",{method:"POST",headers:{"Content-Type":"application/json","X-Battery-Internal-Authorization":"Bearer "+"s".repeat(40)},body:JSON.stringify({...c,admin:true})});
- const r=await json(await engine.fetch(req,{BATTERY_DB:{batch(){}},BATTERY_ENGINE_SECRET:"s".repeat(40)}));
+ const r=await json(await engine.fetch(req,{BATTERY_DB:{batch(){}},BATTERY_ENGINE_SECRET:"s".repeat(40),BATTERY_OPERATIONS_ENABLED:"true"}));
  assert.equal(r.code,400);
 });
 test("overdraft debt is recorded only on successful commit, not reserve",async()=>{
@@ -181,7 +181,7 @@ test("overdraft settle success commits debt once and advances usage count",async
 test("private credit issuer uses a distinct secret and cannot be called using engine secret",async()=>{
  const payload={credit_id:"grant_secure_123",user_id:c.user_id,quantity:7,source:"gift",expires_at_ms:Date.now()+86400000};
  const request=secret=>new Request("https://battery-engine.internal/v1/credit",{method:"POST",headers:{"Content-Type":"application/json","X-Battery-Credit-Authorization":"Bearer "+secret},body:JSON.stringify(payload)});
- const env={BATTERY_DB:dbWith({wallet:0}),BATTERY_ENGINE_SECRET:"e".repeat(40),BATTERY_CREDIT_ISSUER_SECRET:"i".repeat(40)};
+ const env={BATTERY_DB:dbWith({wallet:0}),BATTERY_ENGINE_SECRET:"e".repeat(40),BATTERY_CREDIT_ISSUER_SECRET:"i".repeat(40),BATTERY_CREDIT_ENABLED:"true"};
  assert.equal((await engine.fetch(request("e".repeat(40)),env)).status,403);
  const valid=await json(await engine.fetch(request("i".repeat(40)),env));
  assert.equal(valid.code,200);
@@ -202,4 +202,33 @@ test("credit issuer rejects forged fields, expired credits and missing permissio
  assert.equal((await send({...p,admin:true})).status,400);
  assert.equal((await send({...p,expires_at_ms:Date.now()-1000})).status,400);
  assert.equal(env.BATTERY_DB.batches.length,0);
+});
+
+test("production write operations stay disabled even with configured valid Engine secret",async()=>{
+ const secret="s".repeat(40),db=dbWith();
+ const reserveRequest=new Request("https://battery-engine.internal/v1/reserve",{
+  method:"POST",headers:{"Content-Type":"application/json","X-Battery-Internal-Authorization":"Bearer "+secret},
+  body:JSON.stringify(c)
+ });
+ const r=await json(await engine.fetch(reserveRequest,{BATTERY_DB:db,BATTERY_ENGINE_SECRET:secret}));
+ assert.equal(r.code,503);
+ assert.equal(r.data.error,"battery_operations_disabled");
+ assert.equal(db.batches.length,0);
+});
+test("production credits require an independent runtime enable switch",async()=>{
+ const token="i".repeat(40),db=dbWith();
+ const r=await json(await engine.fetch(new Request("https://battery-engine.internal/v1/credit",{
+  method:"POST",headers:{"Content-Type":"application/json","X-Battery-Credit-Authorization":"Bearer "+token},
+  body:JSON.stringify({credit_id:"credit_disabled_123",user_id:c.user_id,source:"gift",quantity:3,expires_at_ms:Date.now()+86400000})
+ }),{BATTERY_DB:db,BATTERY_CREDIT_ISSUER_SECRET:token}));
+ assert.equal(r.code,503);
+ assert.equal(r.data.error,"credit_issuance_disabled");
+ assert.equal(db.batches.length,0);
+});
+test("explicit disable of overdraft denies insufficient reserve while preserving funded operations",async()=>{
+ const db=dbWith({lots:[],wallet:0});
+ const result=await json(await reserve(db,c,1000,false));
+ assert.equal(result.code,409);
+ assert.equal(result.data.error,"overdraft_temporarily_disabled");
+ assert.equal(db.batches.length,0);
 });
