@@ -48,3 +48,40 @@ test("Central preview smoke does not trigger for Battery-only changes",()=>{
  assert.ok(compatSmoke.includes('"central-id-v2/src/**"'));
  assert.ok(compatSmoke.includes('"central-id-v2/migrations/**"'));
 });
+
+
+test("Central Cloudflare preflight performs GET-only and verifies exact Preview target",async()=>{
+ const {verifyCentralTarget}=await import("../release/verify-central-cloudflare.mjs");
+ const calls=[];
+ const mocked=async(url,options)=>{
+  calls.push({url,method:options.method});
+  let result;
+  if(url.endsWith("/settings"))result={bindings:[
+   {type:"d1",name:"CENTRAL_DB",id:cfg.preview.d1_id},
+   {type:"d1",name:"LEGACY_AUTH_DB",id:cfg.preview.d1_id}
+  ]};
+  else if(url.includes("/d1/database/"))result={uuid:cfg.preview.d1_id,name:"central-id-preview"};
+  else if(url.endsWith("/deployments"))result={deployments:[{versions:[{version_id:"central-preview-version"}]}]};
+  else throw Error("unexpected external request");
+  return {ok:true,status:200,json:async()=>({success:true,result})};
+ };
+ const actual=await verifyCentralTarget({target:"preview",accountId:"f".repeat(32),token:"central-token-for-mocked-unit-test",request:mocked});
+ assert.equal(actual.worker,"hglobal-central-id-v2-preview");
+ assert.equal(actual.only_read_operations,true);
+ assert.equal(actual.rollback_source_available,true);
+ assert.equal(calls.length,3);
+ assert.ok(calls.every(c=>c.method==="GET"));
+ assert.ok(calls.every(c=>!c.url.includes("/starry-battery")));
+});
+test("Central preflight rejects Battery D1, foreign service and missing credentials",async()=>{
+ const {verifyCentralTarget}=await import("../release/verify-central-cloudflare.mjs");
+ const common={target:"production",accountId:"f".repeat(32),token:"central-mocked-token"};
+ const respond=bindings=>async(url)=>({ok:true,status:200,json:async()=>({success:true,result:url.endsWith("/settings")?{bindings}:url.includes("/d1/database/")?{uuid:cfg.production.d1_id}: {deployments:[{versions:[{version_id:"safe"}]}]}})});
+ const good=[
+  {name:"CENTRAL_DB",type:"d1",id:cfg.production.d1_id},
+  {name:"LEGACY_AUTH_DB",type:"d1",id:cfg.production.legacy_d1_id}
+ ];
+ await assert.rejects(verifyCentralTarget({...common,request:respond([{name:"CENTRAL_DB",type:"d1",id:cfg.forbidden.d1_ids[0]},good[1]])}),/wrong_central_d1_target/);
+ await assert.rejects(verifyCentralTarget({...common,request:respond([...good,{type:"service",name:"NOT_ALLOWED",service:"starry-battery-engine-preview"}])}),/battery_binding_found/);
+ await assert.rejects(verifyCentralTarget({...common,token:"",request:respond(good)}),/central_api_token_unavailable/);
+});
