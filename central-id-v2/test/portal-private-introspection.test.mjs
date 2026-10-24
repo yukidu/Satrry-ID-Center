@@ -89,7 +89,10 @@ test("deleted, suspended, revoked, expired, changed auth_version and brand revok
   {parent_expires_at_ms:now},
   {parent_auth_version:3},
   {parent_issued_at_ms:now+5},
+  {issued_at_ms:now+1},
   {parent_expires_at_ms:now+5},
+  {brand_granted_at_ms:now+1},
+  {expires_at_ms:now+900001},
   {brand_granted_at_ms:now+5},
   {brand_scope:"hglobal"},{audience:"another-app"},
   {user_id:""}
@@ -99,6 +102,12 @@ test("deleted, suspended, revoked, expired, changed auth_version and brand revok
   assert.notEqual(r.status,200,JSON.stringify(reason));
  }
  assert.equal((await introspect(make(),env(mockDb(null)),now)).status,401);
+});
+test("untrusted clock input always fails closed",async()=>{
+ for(const clock of [NaN,Infinity,-1,0,1.5]){
+  const r=await introspect(make(),env(mockDb(row())),clock);
+  assert.notEqual(r.status,200);
+ }
 });
 test("central D1 error returns dependency-unavailable not cached allow",async()=>{
  const broken={prepare(){throw Error("D1 is disconnected")}};
