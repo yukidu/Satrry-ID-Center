@@ -1,7 +1,7 @@
 {
   "updated_on": "2026-10-24",
   "source_pr": 37,
-  "mode": "production_infrastructure_provisioned_not_activated",
+  "mode": "production_workers_deployed_private_and_all_financial_operations_disabled",
   "preview": {
     "d1_name": "starry-battery-overdraft-preview-20261024",
     "d1_id": "cd93105f-7963-4a0d-bbb5-fc11e4555a5e",
@@ -16,7 +16,15 @@
     "r2_bucket": "starry-battery-ledger-production",
     "gateway": "starry-battery-gateway-production",
     "engine": "starry-battery-engine-production",
-    "archive": "starry-battery-archive-production"
+    "archive": "starry-battery-archive-production",
+    "production_worker_versions": {
+      "engine": "82799615-c8c1-4723-bd22-a2d06096d44b",
+      "gateway": "182448c0-e9ef-481c-adf1-1a43de7462d7",
+      "archive": "0489956d-c07b-4dfe-becf-94cd34310a76"
+    },
+    "public_routes_enabled": false,
+    "central_auth_binding_connected": false,
+    "transactions_enabled": false
   },
   "forbidden_central_d1_ids": [
     "ca08ee86-7b39-46fe-a578-611d1bee312c",
