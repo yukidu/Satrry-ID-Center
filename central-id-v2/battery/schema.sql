@@ -78,3 +78,13 @@ CREATE TABLE IF NOT EXISTS battery_credit_receipts (
  CHECK(repaid_units+lot_units=quantity)
 );
 CREATE INDEX IF NOT EXISTS idx_battery_credit_receipts_user ON battery_credit_receipts(user_id,created_at_ms);
+
+-- Enforce lot-backed reservation amount plus overdraft shortfall equals charge.
+CREATE TRIGGER IF NOT EXISTS battery_reservation_split_insert
+BEFORE INSERT ON battery_reservations
+WHEN NEW.funded_units + NEW.overdraft_units != NEW.quantity
+BEGIN SELECT RAISE(ABORT,'reservation_amount_mismatch'); END;
+CREATE TRIGGER IF NOT EXISTS battery_reservation_split_update
+BEFORE UPDATE ON battery_reservations
+WHEN NEW.funded_units + NEW.overdraft_units != NEW.quantity
+BEGIN SELECT RAISE(ABORT,'reservation_amount_mismatch'); END;
