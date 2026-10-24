@@ -37,14 +37,14 @@ test("migration source and legacy auth DB must not be treated as owned writable 
 });
 
 test("Central PR CI rejects changes that mix in Battery code or legacy shared acceptance",()=>{
- assert.match(yaml,/Ensure Central PR does not include Battery-owned files/);
- assert.match(yaml,/central-id-v2\\/battery\\//);
- assert.match(yaml,/central-id-v2\\/acceptance\\//);
- assert.match(yaml,/git diff --name-only/);
- assert.match(yaml,/fetch-depth: 0/);
+ assert.ok(yaml.includes("Ensure Central PR does not include Battery-owned files"));
+ assert.ok(yaml.includes("central-id-v2/battery/"));
+ assert.ok(yaml.includes("central-id-v2/acceptance/"));
+ assert.ok(yaml.includes("git diff --name-only"));
+ assert.ok(yaml.includes("fetch-depth: 0"));
 });
 test("Central preview smoke does not trigger for Battery-only changes",()=>{
- assert.doesNotMatch(compatSmoke,/central-id-v2\\/\\*\\*/);
- assert.match(compatSmoke,/central-id-v2\\/src\\/\\*\\*/);
- assert.match(compatSmoke,/central-id-v2\\/migrations\\/\\*\\*/);
+ assert.ok(!compatSmoke.includes('"central-id-v2/**"'));
+ assert.ok(compatSmoke.includes('"central-id-v2/src/**"'));
+ assert.ok(compatSmoke.includes('"central-id-v2/migrations/**"'));
 });
