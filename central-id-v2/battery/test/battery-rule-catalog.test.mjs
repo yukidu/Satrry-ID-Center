@@ -21,11 +21,13 @@ test("Battery rule IDs are unique, stable and carry a valid lifecycle status",()
   if(r.status==="pending")assert.equal(r.enabled,false,"unconfirmed business rule must fail closed: "+r.id);
  }
 });
-test("pending unlimited debt stays OFF and H-Global cannot call Battery",()=>{
+test("decided overdraft remains disabled pending acceptance and H-Global cannot call Battery",()=>{
  const overdraft=rules.find(x=>x.id==="BAT-B05");
- assert.equal(overdraft.status,"pending");
+ assert.equal(overdraft.status,"developed");
  assert.equal(overdraft.enabled,false);
- assert.ok(overdraft.ambiguities.length>=3);
+ assert.equal(overdraft.successful_overdraft_limit,2);
+ assert.equal(overdraft.concurrent_overdraft_limit,1);
+ assert.equal(overdraft.reset_when_debt_zero,true);
  const onlyStarry=rules.find(x=>x.id==="BAT-A01");
  assert.equal(onlyStarry.hglobal_battery_allowed,false);
 });
