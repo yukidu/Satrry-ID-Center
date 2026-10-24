@@ -73,14 +73,18 @@ export async function introspect(request,env,nowMs=Date.now()){
   data=await env.CENTRAL_DB.prepare(statement).bind(await sha256Hex(bearer.slice(7))).first();
  }catch{return reply({error:"dependency_unavailable"},503);}
  if(!data||!USER_ID.test(data.user_id||""))return reply({error:"unauthorized"},401);
+ // Reject impossible or future-issued time ranges even if an older schema
+ // or a corrupted test fixture bypasses D1's CHECK constraints.
+ if(!Number.isSafeInteger(nowMs)||nowMs<=0)return reply({error:"dependency_unavailable"},503);
  if(data.brand_scope!=="starry"||data.audience!=="starry-battery"||
     data.revoked_at_ms!==null||data.brand_revoked_at_ms!==null||
     data.parent_revoked_at_ms!==null||data.parent_brand_scope!=="central"||
-    !Number.isSafeInteger(data.issued_at_ms)||data.issued_at_ms<=0||
-    !Number.isSafeInteger(data.brand_granted_at_ms)||data.brand_granted_at_ms>data.issued_at_ms||
-    !Number.isSafeInteger(data.parent_issued_at_ms)||data.parent_issued_at_ms>data.issued_at_ms||
+    !Number.isSafeInteger(data.issued_at_ms)||data.issued_at_ms<=0||data.issued_at_ms>nowMs||
+    !Number.isSafeInteger(data.brand_granted_at_ms)||data.brand_granted_at_ms>data.issued_at_ms||data.brand_granted_at_ms>nowMs||
+    !Number.isSafeInteger(data.parent_issued_at_ms)||data.parent_issued_at_ms>data.issued_at_ms||data.parent_issued_at_ms>nowMs||
     !Number.isSafeInteger(data.parent_expires_at_ms)||data.parent_expires_at_ms<=nowMs||
     !Number.isSafeInteger(data.expires_at_ms)||data.expires_at_ms<=nowMs||data.expires_at_ms>data.parent_expires_at_ms||
+    data.expires_at_ms-data.issued_at_ms>900000||data.expires_at_ms<=data.issued_at_ms||
     !Number.isSafeInteger(data.issued_auth_version)||data.parent_auth_version!==data.issued_auth_version||
     data.issued_auth_version!==data.auth_version||
     data.suspended_at_ms!==null||data.deleted_at_ms!==null||
