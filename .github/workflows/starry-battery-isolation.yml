@@ -63,6 +63,14 @@ jobs:
           node central-id-v2/battery/deploy/generate-config.mjs
           node --input-type=module -e "import fs from 'node:fs';const root='central-id-v2/battery/';const engine=JSON.parse(fs.readFileSync(root+'.wrangler.engine.generated.json'));const gateway=JSON.parse(fs.readFileSync(root+'.wrangler.gateway.generated.json'));if(engine.name!=='starry-battery-engine-preview'||gateway.name!=='starry-battery-gateway-preview'||engine.workers_dev!==false||gateway.services?.some(x=>x.service?.startsWith('hglobal')))process.exit(1)"
           rm central-id-v2/battery/.wrangler.*.generated.json
+      - name: Verify independently deployed Battery preview HTTP health
+        if: github.event_name == 'pull_request'
+        run: |
+          set -eu
+          curl --fail --silent --show-error --retry 3 --max-time 15 \
+            https://starry-battery-gateway-preview-v2-20261024.yukidu.workers.dev/health \
+            -o /tmp/battery-health.json
+          node --input-type=module -e "import fs from 'node:fs';const o=JSON.parse(fs.readFileSync('/tmp/battery-health.json'));if(o.service!=='starry-battery-gateway'||o.status!=='reachable')process.exit(1)"
       - name: Confirm no production deployment in this workflow
         run: |
           echo 'Guard only: no Cloudflare credentials, migrations, or production deployment.'
