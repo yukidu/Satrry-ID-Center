@@ -2,7 +2,7 @@
 // This Worker has no public hostname, route or exposed endpoint. Runs once per RUN_ID.
 // It calls the actual source engine with Cloudflare's real D1 binding, not a mock.
 import engine, { reserve, settle, sweepExpiredReservations, sweepExpiredAvailableLots,applyCredit } from "./engine.mjs";
-const RUN_ID="bat-d1-e2e-overdraft-20261024-05";
+const RUN_ID="bat-d1-e2e-overdraft-20261024-06";
 const BASE=Date.now() + 48*3600000; // future logical clock: production sandbox Cron can't race
 const assert=(ok, why)=>{if(!ok)throw Error(why)};
 const one=(db,sql,...args)=>db.prepare(sql).bind(...args).first();
@@ -168,7 +168,7 @@ async function main(db){
     method:"POST",headers:{"Content-Type":"application/json","X-Battery-Credit-Authorization":header},body:JSON.stringify(value)
    }),env);
   const issuer="b".repeat(40),debit="d".repeat(40);
-  const ctx={BATTERY_DB:db,BATTERY_ENGINE_SECRET:debit,BATTERY_CREDIT_ISSUER_SECRET:issuer};
+  const ctx={BATTERY_DB:db,BATTERY_ENGINE_SECRET:debit,BATTERY_CREDIT_ISSUER_SECRET:issuer,BATTERY_CREDIT_ENABLED:"true"};
   assert((await call(await send("Bearer "+debit,ctx))).status===403,"spend engine key authorizes credit");
   assert((await call(await send("Bearer "+issuer,{BATTERY_DB:db,BATTERY_ENGINE_SECRET:debit}))).status===503,"missing issuer fails open");
   const result=await call(await send("Bearer "+issuer,ctx));
