@@ -1,6 +1,6 @@
 # Starry Battery｜Production 發布實際盤點｜2026-10-24
 
-> **狀態：正式基礎設施已建置；服務未上線；禁止會員扣款。**
+> **狀態：正式 D1/R2 與**三個私有暗部署 Production Workers** 均已建置；仍未公開／未啟用會員扣款。**
 > 使用者已授權啟動正式部署，但未授權跳過必要身分、財務帳務安全驗收。
 
 ## 已執行且 Cloudflare 讀回確認
@@ -11,7 +11,7 @@
 | D1 schema | PR #37 `central-id-v2/battery/schema.sql`；Git blob `702045b77085e30b72ba5a1debe09bc37d202a92` | 空庫安全確認後 D1 查詢 API 成功執行 18 語句 |
 | D1 table | `battery_app_clients`, `battery_app_rate_limits`, `battery_archive_index`, `battery_credit_receipts`, `battery_ledger`, `battery_lots`, `battery_overdraft_accounts`, `battery_reservation_allocations`, `battery_reservations`, `battery_wallets` | 實際列舉 10 張 |
 | Production wallet/App/ledger/debt/archive | 在 Production D1 的 SELECT COUNT 讀回 | **全部 0 筆** |
-| Production Battery Engine/Gateway/Archive Workers | `starry-battery-*-production` | **未建立／未部署**，沒有正式路由 |
+| Production Battery Engine/Gateway/Archive Workers | `starry-battery-*-production` | **均已私有暗部署**，無公開路由、無 Cron、未接正式 Auth，交易功能 disabled |
 | 中央正式 Worker/D1 | `hglobal-central-id-v2`, `central_id_v2` | 本輪 Battery AI 未修改 |
 
 ## 發布與安全隔離
@@ -36,4 +36,17 @@
 6. 正式 worker deployment SHA、health、真實合法與非法 token 的讀寫 E2E、回退點與安全稽核證據。
 
 ## 發布結論
-`production_ready=false`。**只有正式 D1/R2 基礎資源已部署；Battery API Production 尚未啟用。**
+`production_ready=false`。**正式 D1/R2＋三個私有 Worker 已部署；因沒有正式中央 Auth／正式金鑰／正式授權，Battery API Production 對會員尚未啟用。**
+
+## 第二階段｜Dark Production Workers 實際 Cloudflare 版本與安全查驗（2026-10-24）
+
+| Worker | Cloudflare deploy version_id | Public/Preview | Cron | 安全狀態 |
+| --- | --- | --- | --- | --- |
+| `starry-battery-engine-production` | `82799615-c8c1-4723-bd22-a2d06096d44b` | 皆 disabled | 0 | 正式 D1 綁定正確；OPERATIONS/CREDIT/OVERDRAFT 全為 `false`，無正式私有 Secret |
+| `starry-battery-gateway-production` | `182448c0-e9ef-481c-adf1-1a43de7462d7` | 皆 disabled | 0 | D1／R2 指向 Battery Production，私有 `BATTERY_ENGINE` 指向正式 Battery Engine；缺中央 Auth Binding 會拒絕全部會員 API |
+| `starry-battery-archive-production` | `0489956d-c07b-4dfe-becf-94cd34310a76` | 皆 disabled | 0 | 正式 R2、D1 綁定正確，`BATTERY_ARCHIVE_ENABLED=false`，絕無自動移除帳本排程 |
+
+**注意：這是完成正式暗部署，不是完成正式上線。** 雖然程式存在於正式 Cloudflare 帳號，但沒有公開入口、正式 App 客戶端憑證、中央 Auth 綁定和已開啟的財務 runtime 開關，無法讓會員使用。部署來源仍為 Draft PR #37 的候選程式，只有下一階段經過中央與 Battery 雙方驗收、合併 main、正式 rollback/CI Gate 後才能逐步放行。
+
+### 中央 AI 已實際有進度（唯讀查核）
+中央獨立 Draft PR #40（https://github.com/yukidu/Satrry-ID-Center/pull/40）已建立受保護私有 Auth 候選 Worker／中央 sandbox D1，11/11 隔離 E2E PASS，但**仍無可用的正式短期 token issuer、正式 D1 migration 或正式 Battery 可用驗證服務**。Battery PR #37 已加入中央額外要求的 `X-Central-Service-Auth` Header，以及 `CENTRAL_AUTH_CALLER_SECRET` 缺失 fail-closed，GitHub CI 通過。不可用中央 Sandbox 處理正式會員身份。
