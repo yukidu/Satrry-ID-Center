@@ -54,4 +54,11 @@ jobs:
           test "$STATUS" = "401"
           curl -fSs --max-time 25 "$URL/portal.js" -o /tmp/portal.js
           grep -q "google.accounts.id.initialize" /tmp/portal.js
+          grep -q 'logout-all' /tmp/portal.js
+          STATUS=$(curl -sS --max-time 25 -o /tmp/logout-all-anon.json -w "%{http_code}" -X POST -H "Origin: $URL" "$URL/api/v1/portal/logout-all")
+          test "$STATUS" = "401"
+          STATUS=$(curl -sS --max-time 25 -o /tmp/logout-all-origin.json -w "%{http_code}" -X POST -H "Origin: https://attacker.example" "$URL/api/v1/portal/logout-all")
+          test "$STATUS" = "403"
+          STATUS=$(curl -sS --max-time 25 -o /tmp/logout-all-get.json -w "%{http_code}" "$URL/api/v1/portal/logout-all")
+          test "$STATUS" = "405"
           echo "PASS: preview D1 connected, no anonymous data, one-time tickets fail closed, no cutover claim"
