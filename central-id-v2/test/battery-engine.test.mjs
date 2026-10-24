@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {webcrypto} from "node:crypto";
-import engine,{reserve,settle} from "../battery/engine.mjs";
+import engine,{reserve,settle,sweepExpiredReservations,sweepExpiredAvailableLots} from "../battery/engine.mjs";
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
 const c={user_id:"member_123",app_id:"starry_echo",operation_id:"operation_123",quantity:4};
-function dbWith({existing=null,lots=[{lot_id:"early",available_units:2,expires_at_ms:100000},{lot_id:"late",available_units:7,expires_at_ms:200000}],wallet=9,allocations=[]}={}){
+function dbWith({existing=null,lots=[{lot_id:"early",available_units:2,expires_at_ms:100000},{lot_id:"late",available_units:7,expires_at_ms:200000}],wallet=9,allocations=[],expiredReservations=[],expiredLots=[]}={}){
  const calls=[],batches=[];
  return {
   calls,batches,
@@ -22,6 +22,8 @@ function dbWith({existing=null,lots=[{lot_id:"early",available_units:2,expires_a
       async all(){
        if(sql.includes("FROM battery_lots WHERE"))return {results:lots};
        if(sql.includes("FROM battery_reservation_allocations a JOIN battery_lots"))return {results:allocations};
+       if(sql.includes("FROM battery_reservations WHERE state='reserved'"))return {results:expiredReservations};
+       if(sql.includes("FROM battery_lots WHERE expires_at_ms<="))return {results:expiredLots};
        throw Error("unexpected all "+sql);
       }
      };
@@ -109,6 +111,24 @@ test("timeout release never returns expired units as spendable",async()=>{
  assert.equal(r.data.status,"expired");
  const w=db.batches[0].find(x=>x.sql.startsWith("UPDATE battery_wallets"));
  assert.equal(w.args[1],0);
+});
+test("private Cron sweeps timed-out reservations without the App coming back",async()=>{
+ const existing={...c,reservation_id:"res-123",state:"reserved",deadline_at_ms:1100};
+ const db=dbWith({existing,expiredReservations:[{user_id:c.user_id,app_id:c.app_id,operation_id:c.operation_id}],allocations:[{lot_id:"late",quantity:4,expires_at_ms:99999}]});
+ const outcome=await sweepExpiredReservations(db,1200);
+ assert.deepEqual(outcome,{checked:1,expired:1,failed:0});
+ assert.equal(db.batches.length,1);
+});
+test("expiry cleanup removes available lots and matching wallet units atomically",async()=>{
+ const db=dbWith({expiredLots:[{user_id:c.user_id,lot_id:"early",available_units:7}]});
+ const outcome=await sweepExpiredAvailableLots(db,100000);
+ assert.deepEqual(outcome,{checked:1,cleared:1,failed:0});
+ assert.equal(db.batches.length,1);
+ assert.match(db.batches[0][0].sql,/ELSE -1/,"expired-lot update must fail closed on concurrent changes");
+ assert.equal(db.batches[0][1].args[0],7);
+});
+test("private Cron scheduled() silently skips missing sandbox D1",async()=>{
+ await assert.doesNotReject(()=>engine.scheduled({},{}));
 });
 test("private engine fails closed without secret or configured D1",async()=>{
  const req=new Request("https://battery-engine.internal/v1/reserve",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(c)});
