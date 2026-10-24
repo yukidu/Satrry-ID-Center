@@ -92,3 +92,36 @@ jobs:
       - name: Confirm no production deployment in this workflow
         run: |
           echo 'Guard only: no Cloudflare credentials, migrations, or production deployment.'
+
+  standalone-subtree-dry-run:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Extract actual Battery commit history without pushing
+        run: |
+          set -eu
+          sha="$(git subtree split --prefix=central-id-v2/battery HEAD)"
+          test -n "$sha"
+          git worktree add -q --detach /tmp/starry-battery-extracted "$sha"
+          test -f /tmp/starry-battery-extracted/engine.mjs
+          test -f /tmp/starry-battery-extracted/worker.mjs
+          test -f /tmp/starry-battery-extracted/schema.sql
+          test ! -d /tmp/starry-battery-extracted/central-id-v2/src
+      - name: Run Battery tests directly at future new Repo root
+        working-directory: /tmp/starry-battery-extracted
+        run: |
+          node --test test/*.test.mjs
+          python3 test/battery_schema_test.py
+          python3 test/battery_migration_test.py
+          node --check engine.mjs
+          node --check worker.mjs
+          node --check archive.mjs
+      - name: Confirm dry-run never published or touched Production
+        run: echo 'Validated Git subtree extraction locally; no GitHub push, Cloudflare API or Production action.'
