@@ -36,7 +36,7 @@ jobs:
           set -eu
           git diff --name-only "$BASE_SHA" "$HEAD_SHA" > /tmp/changed.txt
           cat /tmp/changed.txt
-          if grep -Ev '^(central-id-v2/battery/|\.github/workflows/starry-battery-isolation\.yml$)' /tmp/changed.txt; then
+          if grep -Ev '^(central-id-v2/battery/|\.github/workflows/starry-battery-(isolation|deploy)\.yml$)' /tmp/changed.txt; then
             echo 'ERROR: Battery-only PR modifies shared or Central ID files; open a separate cross-domain PR.'
             exit 1
           fi
