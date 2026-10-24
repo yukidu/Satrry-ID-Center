@@ -116,7 +116,7 @@ Exact source SHA: $SOURCE_SHA
 Subtree SHA: $BATTERY_SHA
 
 The source repo and Draft PR #37 are preserved as historical references.
-The original \`central-id-v2/battery/\` subtree is now this repo's root.
+The original `central-id-v2/battery/` subtree is now this repo's root.
 The workflow paths have been updated for the standalone layout.
 
 **Migration of GitHub source code is not a Cloudflare data migration.**
@@ -126,9 +126,9 @@ remain where they are. Do not delete, duplicate, reset or remigrate production D
 ## Cutover safety gates
 1. GitHub Actions CI green in this new repo.
 2. Reconnect GitHub connector/installations and review least-privilege access.
-3. Set repo environments \`battery-preview\` and \`battery-production\` with required reviewers for Production.
+3. Set repo environments `battery-preview` and `battery-production` with required reviewers for Production.
 4. Re-provision scoped Github Secrets/Vars via trusted channels; DO NOT copy secret values into git.
-5. Verify new CI and standalone Preview deployments; keep \`production_ready=false\`.
+5. Verify new CI and standalone Preview deployments; keep `production_ready=false`.
 6. Coordinate Central Auth private Service Binding across repos (same Cloudflare account initially).
 7. Update all app/client refs and protected deployment workflows.
 8. Only after acceptance archive/close old PR #37 and remove old Battery source through a reviewed Central-owned cleanup PR.
@@ -146,11 +146,11 @@ https://github.com/yukidu/starry-battery
 
 中央會員系統請至：https://github.com/yukidu/hglobal-id
 
-此代碼由原 \`central-id-v2/battery/\` 安全抽出。以下舊 PR #37、
+此代碼由原 `central-id-v2/battery/` 安全抽出。以下舊 PR #37、
 原路徑或正式上線說明保留為歷史資料，不代表本 Repo 的目前 PR 狀態。
 **正式 Battery 交易目前未啟用；Cloudflare D1/R2/Workers 完全不因 GitHub 拆分而重建。**
 
-參考本 Repo 的 \`STANDALONE_MIGRATION.md\` 及 \`deploy/battery-targets.json\`
+參考本 Repo 的 `STANDALONE_MIGRATION.md` 及 `deploy/battery-targets.json`
 核對 CI、Cloudflare 與正式啟用關卡。
 
 ---
