@@ -1,5 +1,5 @@
 {
-  "catalog_version": "2026-10-24.2",
+  "catalog_version": "2026-10-24.3",
   "authority": "M06 official Google Doc, this catalog is an implementation index not a new decision",
   "m06_url": "https://docs.google.com/document/d/10XEaZagWP_hwF1kn3JidrjYyfE3-7L9SZLND2CZdAXA/edit",
   "overview_url": "https://docs.google.com/document/d/1T-SXNilxJ9QnwHotDkFAC3OHIbZtpPo0KJ8PgcDeRLc/edit",
@@ -105,9 +105,13 @@
     {
       "id": "BAT-C03",
       "name": "Ledger archive",
-      "status": "unverified",
+      "status": "developed",
       "d1_recent_months": 12,
-      "r2_archive_after_reconciliation": true
+      "r2_archive_after_reconciliation": true,
+      "enabled": false,
+      "implementation": "private archive Worker + D1 SHA-256 index + user-scoped R2 reads; real preview R2/D1 E2E passed, production disabled",
+      "test_run_id": "bat-r2-archive-e2e-20261024-01",
+      "production_ready": false
     },
     {
       "id": "BAT-C04",
