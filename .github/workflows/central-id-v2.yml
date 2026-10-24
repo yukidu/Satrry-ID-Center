@@ -2,7 +2,7 @@ name: Central ID v2 isolated CI
 
 # Central member ID owns identity, portal, session, center and central D1.
 # Battery owns central-id-v2/battery/** and battery-specific tests.
-# Never use the old broad central-id-v2/** filter here: a Battery-only change
+# Never use a catch-all directory filter here: a Battery-only change
 # must NOT invoke the Central CI job or release lifecycle.
 on:
   push:
