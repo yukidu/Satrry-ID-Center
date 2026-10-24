@@ -18,6 +18,7 @@ function dbWith({existing=null,lots=[{lot_id:"early",available_units:2,expires_a
        if(sql.includes("FROM battery_reservations WHERE"))return existing;
        if(sql.includes("SELECT available_units,version FROM battery_wallets"))return wallet===null?null:{available_units:wallet,version:1};
        if(sql.includes("FROM battery_overdraft_accounts"))return null;
+       if(sql.includes("FROM battery_credit_receipts"))return null;
        throw Error("unexpected first "+sql);
       },
       async all(){
@@ -175,4 +176,30 @@ test("overdraft settle success commits debt once and advances usage count",async
  const op=db.batches[0].find(x=>x.sql.includes("SET debt_units="));
  assert.ok(op);
  assert.match(op.sql,/successful_uses=successful_uses\+1/);
+});
+
+test("private credit issuer uses a distinct secret and cannot be called using engine secret",async()=>{
+ const payload={credit_id:"grant_secure_123",user_id:c.user_id,quantity:7,source:"gift",expires_at_ms:Date.now()+86400000};
+ const request=secret=>new Request("https://battery-engine.internal/v1/credit",{method:"POST",headers:{"Content-Type":"application/json","X-Battery-Credit-Authorization":"Bearer "+secret},body:JSON.stringify(payload)});
+ const env={BATTERY_DB:dbWith({wallet:0}),BATTERY_ENGINE_SECRET:"e".repeat(40),BATTERY_CREDIT_ISSUER_SECRET:"i".repeat(40)};
+ assert.equal((await engine.fetch(request("e".repeat(40)),env)).status,403);
+ const valid=await json(await engine.fetch(request("i".repeat(40)),env));
+ assert.equal(valid.code,200);
+ assert.equal(valid.data.available_added_units,7);
+ assert.equal(valid.data.repaid_units,0);
+ assert.ok(env.BATTERY_DB.batches[0].some(x=>x.sql.includes("INSERT INTO battery_ledger")&&x.args[4]===7),"credit ledger audit missing");
+});
+test("missing privileged issuer secret prevents credit operations",async()=>{
+ const payload={credit_id:"grant_secure_456",user_id:c.user_id,quantity:7,source:"gift",expires_at_ms:Date.now()+86400000};
+ const req=new Request("https://battery-engine.internal/v1/credit",{method:"POST",headers:{"Content-Type":"application/json","X-Battery-Credit-Authorization":"Bearer "+"e".repeat(40)},body:JSON.stringify(payload)});
+ assert.equal((await engine.fetch(req,{BATTERY_DB:dbWith(),BATTERY_ENGINE_SECRET:"e".repeat(40)})).status,503);
+});
+test("credit issuer rejects forged fields, expired credits and missing permissions",async()=>{
+ const headers={"Content-Type":"application/json","X-Battery-Credit-Authorization":"Bearer "+"i".repeat(40)};
+ const env={BATTERY_DB:dbWith({wallet:0}),BATTERY_CREDIT_ISSUER_SECRET:"i".repeat(40)};
+ const send=data=>engine.fetch(new Request("https://battery-engine.internal/v1/credit",{method:"POST",headers,body:JSON.stringify(data)}),env);
+ const p={credit_id:"grant_secure_789",user_id:c.user_id,quantity:7,source:"gift",expires_at_ms:Date.now()+86400000};
+ assert.equal((await send({...p,admin:true})).status,400);
+ assert.equal((await send({...p,expires_at_ms:Date.now()-1000})).status,400);
+ assert.equal(env.BATTERY_DB.batches.length,0);
 });
