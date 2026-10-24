@@ -157,3 +157,7 @@ Cloud IAM 與使用者 Google 資料授權分開：WIF 不會自動授權 Gmail 
 帳號持有人先遇到 Google `400 origin_mismatch`，新增 Preview JavaScript origin 後回報「可以登入」，並提供 Preview `/dashboard` 截圖。截圖顯示登入者會員控制台與訪客／未核准狀態；記為人工真實登入通過，不公開截圖中的姓名或 user_id。此證據不等同登出撤銷、既有會員映射穩定或 Echo 回歸均通過。
 
 本輪重新讀取正式 Worker 設定成功：仍未設定 HGLOBAL_GOOGLE_CLIENT_ID；CENTRAL_DB 與 LEGACY_AUTH_DB 是不同資料庫。沒有執行正式部署或更動資料庫。PR #31 仍為 Draft。正式切換前需完成 Preview 登出後重新整理 dashboard 會要求登入、再次登入成功，以及原 Echo Google 登入正常之驗收。
+
+## 正式切換前人工驗收
+
+2026-10-24：帳號持有人明確回報「登出、重新登入與原本 Echo 登入都正常」。因此 Preview 真實 Google 登入、登出／重新登入與原本 Echo 登入回歸記為人工驗收通過。尚未證明 Production 新 Client ID 登入成功，也未宣稱一般 ChatGPT 管理連接完成。正式切換僅限中央 portal OAuth client，保留 Starry/Echo audience 與既有資料庫 bindings。
