@@ -5,12 +5,14 @@ on:
     branches: [main]
     paths:
       - "central-id-v2/battery/**"
-      - ".github/workflows/starry-battery-(isolation|deploy).yml"
+      - ".github/workflows/starry-battery-isolation.yml"
+      - ".github/workflows/starry-battery-deploy.yml"
   push:
     branches: [main]
     paths:
       - "central-id-v2/battery/**"
       - ".github/workflows/starry-battery-isolation.yml"
+      - ".github/workflows/starry-battery-deploy.yml"
 
 permissions:
   contents: read
