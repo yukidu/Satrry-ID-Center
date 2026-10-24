@@ -4,6 +4,7 @@ import {readFile} from "node:fs/promises";
 const base=new URL("../release/",import.meta.url);
 const cfg=JSON.parse(await readFile(new URL("central-targets.json",base),"utf8"));
 const yaml=await readFile(new URL("../../.github/workflows/central-id-v2.yml",import.meta.url),"utf8");
+const compatSmoke=await readFile(new URL("../../.github/workflows/central-id-v2-compat-preview-smoke.yml",import.meta.url),"utf8");
 
 test("central production/preview targets are distinct from Battery sandbox",()=>{
  assert.equal(cfg.production.worker,"hglobal-central-id-v2");
@@ -33,4 +34,17 @@ test("migration source and legacy auth DB must not be treated as owned writable 
  assert.equal(cfg.production.legacy_binding,"LEGACY_AUTH_DB");
  assert.equal(cfg.branch_policy.never_merge_mixed_pr_directly,true);
  assert.equal(cfg.branch_policy.legacy_mixed_pr,34);
+});
+
+test("Central PR CI rejects changes that mix in Battery code or legacy shared acceptance",()=>{
+ assert.match(yaml,/Ensure Central PR does not include Battery-owned files/);
+ assert.match(yaml,/central-id-v2\\/battery\\//);
+ assert.match(yaml,/central-id-v2\\/acceptance\\//);
+ assert.match(yaml,/git diff --name-only/);
+ assert.match(yaml,/fetch-depth: 0/);
+});
+test("Central preview smoke does not trigger for Battery-only changes",()=>{
+ assert.doesNotMatch(compatSmoke,/central-id-v2\\/\\*\\*/);
+ assert.match(compatSmoke,/central-id-v2\\/src\\/\\*\\*/);
+ assert.match(compatSmoke,/central-id-v2\\/migrations\\/\\*\\*/);
 });
