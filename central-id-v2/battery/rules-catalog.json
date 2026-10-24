@@ -1,12 +1,12 @@
 {
-  "catalog_version": "2026-10-24.1",
+  "catalog_version": "2026-10-24.2",
   "authority": "M06 official Google Doc, this catalog is an implementation index not a new decision",
   "m06_url": "https://docs.google.com/document/d/10XEaZagWP_hwF1kn3JidrjYyfE3-7L9SZLND2CZdAXA/edit",
   "overview_url": "https://docs.google.com/document/d/1T-SXNilxJ9QnwHotDkFAC3OHIbZtpPo0KJ8PgcDeRLc/edit",
   "production_ready": false,
   "status_definitions": {
     "decided": "正式需求但不等於已實作",
-    "developed": "開發分支有程式但不等於正式上線",
+    "developed": "已有候選開發分支程式，未通過正式驗收／上線",
     "pending": "尚待確認且禁止自動啟用",
     "unverified": "待端到端驗證"
   },
@@ -65,17 +65,26 @@
     },
     {
       "id": "BAT-B05",
-      "name": "Negative battery two instances",
-      "status": "pending",
+      "name": "Two successful overdraft AI operations, reset immediately when debt paid",
+      "status": "developed",
       "enabled": false,
       "wording": "餘額可以接受負數二次，不論數字多大",
-      "ambiguities": [
-        "two additional successful operations versus two debt cycles",
-        "reset period",
-        "repayment order",
-        "numeric representation and financial safety"
+      "existing_schema_check": "wallet lots stay nonnegative, debt separately accounted",
+      "successful_overdraft_limit": 2,
+      "concurrent_overdraft_limit": 1,
+      "timeout_seconds": 180,
+      "reset_when_debt_zero": true,
+      "topup_repay_debt_first": true,
+      "per_transaction_business_cap": null,
+      "technical_integer_limit": 9007199254740991,
+      "required_gates": [
+        "atomic real D1 concurrent reserve and settlement E2E",
+        "credit-repayment racing settlement E2E",
+        "migration and rollback",
+        "protected central auth binding",
+        "independent production gate"
       ],
-      "existing_schema_check": "available_units >= 0"
+      "implementation_status": "candidate code only, no preview or production acceptance yet"
     },
     {
       "id": "BAT-C01",
