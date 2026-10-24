@@ -21,7 +21,7 @@ export const DEFAULT_TTL_MS=5*60*1000;
 const ISSUE_SQL=`
 INSERT INTO central_service_access_tokens(
  token_sha256,user_id,brand_scope,audience,issued_auth_version,
- issued_at_ms,expires_at_ms,issuer_reference,parent_session_sha256)
+ issued_at_ms,expires_at_ms,issuer_reference,source_session_hash)
 SELECT ?,u.user_id,'starry','starry-battery',u.auth_version,
        ?, MIN(?,s.expires_at_ms),'central-session-bound-v1',s.session_id_hash
 FROM auth_sessions s
