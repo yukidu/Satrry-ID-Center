@@ -35,7 +35,7 @@ SELECT t.user_id, t.brand_scope, t.audience, t.expires_at_ms,
 FROM central_service_access_tokens t
 JOIN identity_users u ON u.user_id=t.user_id
 JOIN central_brand_authorizations g ON g.user_id=t.user_id AND g.brand_scope=t.brand_scope
-JOIN auth_sessions s ON s.session_id_hash=t.parent_session_sha256 AND s.user_id=t.user_id
+JOIN auth_sessions s ON s.session_id_hash=t.source_session_hash AND s.user_id=t.user_id
 WHERE t.token_sha256=? AND t.brand_scope='starry' AND t.audience='starry-battery'
 LIMIT 1`;
 
