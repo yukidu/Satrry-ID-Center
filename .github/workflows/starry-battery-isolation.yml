@@ -53,6 +53,11 @@ jobs:
         run: python3 central-id-v2/battery/test/battery_schema_test.py
       - name: Battery isolated migration tests
         run: python3 central-id-v2/battery/test/battery_migration_test.py
+      - name: Verify standalone extraction script and safe Repo boundary
+        run: |
+          bash -n central-id-v2/battery/deploy/bootstrap-standalone-repo.sh
+          node --input-type=module -e "import fs from 'node:fs';const s=fs.readFileSync('central-id-v2/battery/deploy/bootstrap-standalone-repo.sh','utf8');if(!s.includes('git subtree split')||!s.includes('yukidu/starry-battery')||!s.includes('git push --porcelain')||s.includes('git push --force'))process.exit(1);"
+          test -f central-id-v2/battery/deploy/STANDALONE_SPLIT_HANDOFF_2026-10-24.md
       - name: Engine and Gateway syntax
         run: |
           node --check central-id-v2/battery/engine.mjs
