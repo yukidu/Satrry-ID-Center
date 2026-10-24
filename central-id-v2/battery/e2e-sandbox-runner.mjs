@@ -2,7 +2,7 @@
 // This Worker has no public hostname, route or exposed endpoint. Runs once per RUN_ID.
 // It calls the actual source engine with Cloudflare's real D1 binding, not a mock.
 import engine, { reserve, settle, sweepExpiredReservations, sweepExpiredAvailableLots,applyCredit } from "./engine.mjs";
-const RUN_ID="bat-d1-e2e-overdraft-20261024-03";
+const RUN_ID="bat-d1-e2e-overdraft-20261024-04";
 const BASE=Date.now() + 48*3600000; // future logical clock: production sandbox Cron can't race
 const assert=(ok, why)=>{if(!ok)throw Error(why)};
 const one=(db,sql,...args)=>db.prepare(sql).bind(...args).first();
@@ -145,6 +145,36 @@ async function main(db){
   assert((await call(await applyCredit(db,x,BASE+300))).status===200,"grant retry");
   const duplicate=await call(await applyCredit(db,x,BASE+400));
   assert(duplicate.status===200&&duplicate.data.idempotent,"grant idempotency");
+ }));
+
+ checks.push(await testOn(db,"credit_replay_metadata",async u=>{
+  await seed(db,u,[],[]);
+  const issue={credit_id:"credit_meta_replay_123",user_id:u,source:"gift",quantity:11,expires_at_ms:BASE+900000};
+  const firstCredit=await call(await applyCredit(db,issue,BASE));
+  assert(firstCredit.status===200&&firstCredit.data.available_added_units===11,"credit grant failed "+JSON.stringify(firstCredit));
+  const replay=await call(await applyCredit(db,issue,BASE+1));
+  assert(replay.status===200&&replay.data.idempotent===true,"idempotent exact credit failed");
+  const changedSource=await call(await applyCredit(db,{...issue,source:"migration"},BASE+2));
+  assert(changedSource.status===409&&changedSource.data.error==="credit_conflict","credit replay silently changed source");
+  const changedExpiry=await call(await applyCredit(db,{...issue,expires_at_ms:BASE+999999},BASE+3));
+  assert(changedExpiry.status===409&&changedExpiry.data.error==="credit_conflict","credit replay silently changed expiry");
+  const audit=await one(db,"SELECT COUNT(*) AS n,SUM(quantity_delta) AS credits FROM battery_ledger WHERE user_id=? AND app_id='battery_issuer'",u);
+  assert(audit.n===1&&audit.credits===11,"credit ledger duplicated or missing "+JSON.stringify(audit));
+ }));
+ checks.push(await testOn(db,"private_credit_authorization",async u=>{
+  await seed(db,u,[],[]);
+  const value={credit_id:"credit_secure_issue_123",user_id:u,source:"gift",quantity:5,expires_at_ms:BASE+900000};
+  const send=(header,env)=>engine.fetch(new Request("https://battery-engine.internal/v1/credit",{
+    method:"POST",headers:{"Content-Type":"application/json","X-Battery-Credit-Authorization":header},body:JSON.stringify(value)
+   }),env);
+  const issuer="b".repeat(40),debit="d".repeat(40);
+  const ctx={BATTERY_DB:db,BATTERY_ENGINE_SECRET:debit,BATTERY_CREDIT_ISSUER_SECRET:issuer};
+  assert((await call(await send("Bearer "+debit,ctx))).status===403,"spend engine key authorizes credit");
+  assert((await call(await send("Bearer "+issuer,{BATTERY_DB:db,BATTERY_ENGINE_SECRET:debit}))).status===503,"missing issuer fails open");
+  const result=await call(await send("Bearer "+issuer,ctx));
+  assert(result.status===200&&result.data.available_added_units===5,"privileged issuer failed "+JSON.stringify(result));
+  const qty=await one(db,"SELECT available_units FROM battery_wallets WHERE user_id=?",u);
+  assert(qty.available_units===5,"authorized grant ledger mismatch");
  }));
  const req=new Request("https://battery-engine.internal/v1/reserve",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({app_id:"e2e_app",user_id:"e2e_authority",operation_id:"e2e_op_auth",quantity:1})});
  const guarded=await call(await engine.fetch(req,{BATTERY_DB:db}));
