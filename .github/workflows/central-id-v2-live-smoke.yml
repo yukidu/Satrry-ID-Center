@@ -1,6 +1,12 @@
 name: Central ID v2 live endpoint smoke
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "central-id-v2/src/**"
+      - "central-id-v2/migrations/**"
+      - ".github/workflows/central-id-v2-live-smoke.yml"
   pull_request:
     paths:
       - ".github/workflows/central-id-v2-live-smoke.yml"
@@ -57,5 +63,20 @@ jobs:
           curl -fSs --max-time 25 -o /tmp/portal-client.js https://id.hglobal1985.com/portal.js
           grep -q 'google.accounts.id.initialize' /tmp/portal-client.js
           node -e 'const fs=require("fs");const d=require("/tmp/migration-status.json");if(d.portal_entry_available!==true || d.member_login_enabled!==false)throw Error("portal readiness misreported")'
+          curl -fSs --max-time 25 https://id.hglobal1985.com/api/v1/apps/status -o /tmp/first-party-api.json
+          node -e 'const d=require("/tmp/first-party-api.json");if(d.enabled!==true||d.app_registration!=="allowlist-only"||d.privileged_scopes_enabled!==false||d.member_database_direct_access!==false||d.battery_access_enabled!==false)throw Error("first-party API not safely deployed")'
+          curl -fSs --max-time 25 https://id.hglobal1985.com/apps/api-test -o /tmp/first-party-page.html
+          grep -q '中央會員 API｜正式自測' /tmp/first-party-page.html
+          curl -fSs --max-time 25 https://id.hglobal1985.com/apps/api-test.js -o /tmp/first-party-page.js
+          grep -q '/api/v1/apps/token' /tmp/first-party-page.js
+          STATUS=$(curl -sS --max-time 25 -o /tmp/first-party-anon.json -w "%{http_code}" https://id.hglobal1985.com/api/v1/apps/me)
+          test "$STATUS" = "401"
+          STATUS=$(curl -sS --max-time 25 -o /tmp/first-party-evil.json -w "%{http_code}" -H 'Origin: https://evil.example' -X POST -H 'Content-Type: application/json' -d '{"app_id":"hglobal-web"}' https://id.hglobal1985.com/api/v1/apps/challenge)
+          test "$STATUS" = "403"
+          STATUS=$(curl -sS --max-time 25 -o /tmp/first-party-no-origin.json -w "%{http_code}" -X POST -H 'Content-Type: application/json' -d '{"app_id":"hglobal-web"}' https://id.hglobal1985.com/api/v1/apps/challenge)
+          test "$STATUS" = "400"
+          curl -fSs --max-time 25 -H 'Origin: https://id.hglobal1985.com' -X POST -H 'Content-Type: application/json' -d '{"app_id":"hglobal-web"}' https://id.hglobal1985.com/api/v1/apps/challenge -o /tmp/first-party-challenge.json
+          node -e 'const d=require("/tmp/first-party-challenge.json");if(d.nonce?.length!==43||!d.google_client_id?.endsWith(".apps.googleusercontent.com")||d.expires_in!==600)throw Error("first-party nonce issuance failed")'
+          echo 'PASS: first-party status, authorized challenge, self-test UI, anonymous & hostile origin rejection'
           echo 'PASS: production home login CTA, secure Google nonce, protected dashboard, forged token rejection, Echo isolation'
           echo 'PASS: actual production Echo tickets enabled, live revocation source verified, anonymous and forged attempts rejected; full Echo cutover gate remains false'
