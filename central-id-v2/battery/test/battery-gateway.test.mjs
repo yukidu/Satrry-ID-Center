@@ -6,7 +6,7 @@ if(!globalThis.crypto)globalThis.crypto=webcrypto;
 const base="https://battery-starry.internal", token="s".repeat(40);
 const hash=async s=>Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(s)))).map(x=>x.toString(16).padStart(2,"0")).join("");
 const auth=(headers={})=>new Request(base+"/v1/battery/wallet",{headers:{"X-Battery-App-Id":"starry_echo","Authorization":"Bearer "+token,"X-Central-Access-Token":"verified-user-token",...headers}});
-function makeEnv(expectedHash,scopes="balance:read",quotaAllowed=true){
+function makeEnv(expectedHash,scopes="balance:read",quotaAllowed=true,centralResponse={active:true,brand_allowed:true,user_id:"user_123",suspended:false}){
  let count=0;
  return {get calls(){return count;},
   BATTERY_DB:{prepare(sql){return{bind(...args){return{async first(){
@@ -17,7 +17,7 @@ function makeEnv(expectedHash,scopes="balance:read",quotaAllowed=true){
     if(sql.includes("battery_overdraft_accounts"))return {debt_units:3,successful_uses:1,active_reservation_id:null};
     throw Error("unexpected SQL");
   }}}}}},
-  CENTRAL_AUTH_VERIFY:{async fetch(r){assert.equal(r.headers.get("X-Battery-Caller"),"starry");return new Response(JSON.stringify({active:true,brand_allowed:true,user_id:"user_123",suspended:false}),{status:200})}}
+  CENTRAL_AUTH_VERIFY:{async fetch(r){assert.equal(r.headers.get("X-Battery-Caller"),"starry");return new Response(JSON.stringify(centralResponse),{status:200})}}
  };
 }
 test("all private routes are closed without central verifier or registered app",async()=>{
@@ -68,4 +68,27 @@ test("caller cannot forge user identity in reserve payload",async()=>{
  }),env);
  assert.equal(response.status,400);
  assert.equal((await response.json()).error,"invalid_operation");
+});
+
+test("Central verifier must explicitly approve active Starry identity, otherwise fail closed",async()=>{
+ const appHash=await hash(token);
+ for(const fake of [
+  {active:false,brand_allowed:true,user_id:"user_123",suspended:false},
+  {active:true,brand_allowed:false,user_id:"user_123",suspended:false},
+  {active:true,brand_allowed:true,user_id:"user_123",suspended:true},
+  {active:"true",brand_allowed:true,user_id:"user_123",suspended:false},
+  {active:true,brand_allowed:true,suspended:false},
+  {active:true,brand_allowed:true,user_id:"../../other_user",suspended:false}
+ ]){
+  const env=makeEnv(appHash,"balance:read",true,fake);
+  const res=await gateway.fetch(auth(),env);
+  assert.equal(res.status,403,"invalid central response authorized: "+JSON.stringify(fake));
+ }
+});
+test("a missing private Central Auth service binding cannot read even a zero balance",async()=>{
+ const env=makeEnv(await hash(token));
+ delete env.CENTRAL_AUTH_VERIFY;
+ const result=(await (async()=>{const r=await gateway.fetch(auth(),env);return {code:r.status,data:await r.json()};})());
+ assert.equal(result.code,503);
+ assert.equal(result.data.error,"dependency_unavailable");
 });
