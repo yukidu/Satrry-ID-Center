@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS admin_role_grants (
  grant_id TEXT PRIMARY KEY NOT NULL,
  user_id TEXT NOT NULL REFERENCES identity_users(user_id) ON DELETE RESTRICT,
  role_code TEXT NOT NULL
-   CHECK(role_code NOT IN ('super_admin','hglobal_secretary','超級管理員','寰宇秘書')),
+   CHECK(lower(trim(role_code)) NOT IN ('super_admin','hglobal_secretary','超級管理員','寰宇秘書')),
  scope_key TEXT NOT NULL REFERENCES education_centers(center_code),
  granted_at_ms INTEGER NOT NULL,
  revoked_at_ms INTEGER,
@@ -91,6 +91,12 @@ CREATE TABLE IF NOT EXISTS protected_admin_principals (
  bound_at_ms INTEGER NOT NULL CHECK(bound_at_ms>0),
  authorization_reference TEXT NOT NULL CHECK(length(trim(authorization_reference))>=8)
 );
+-- SQLite INSERT OR REPLACE could otherwise replace an existing principal without
+-- firing DELETE triggers under the default recursive_triggers setting. Block it.
+CREATE TRIGGER IF NOT EXISTS trg_protected_admin_no_replace
+BEFORE INSERT ON protected_admin_principals
+WHEN EXISTS(SELECT 1 FROM protected_admin_principals WHERE role_code=NEW.role_code OR user_id=NEW.user_id)
+BEGIN SELECT RAISE(ABORT,'protected_admin_already_bound'); END;
 CREATE TRIGGER IF NOT EXISTS trg_protected_admin_no_update
 BEFORE UPDATE ON protected_admin_principals
 BEGIN SELECT RAISE(ABORT,'protected_admin_immutable'); END;
