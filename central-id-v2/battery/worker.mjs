@@ -70,7 +70,7 @@ export default {
    catch{return json({error:"database_unavailable"},503);}
    return json({entries:rows,limit:50});
   }
-  if(!env?.BATTERY_ENGINE?.fetch)return json({error:"battery_engine_not_ready"},503);
+  if(!env?.BATTERY_ENGINE?.fetch||typeof env.BATTERY_ENGINE_SECRET!=="string"||env.BATTERY_ENGINE_SECRET.length<32)return json({error:"battery_engine_not_ready"},503);
   if(!/^application\/json(?:;|$)/i.test(request.headers.get("Content-Type")||""))return json({error:"unsupported_content_type"},415);
   let body;
   try{const raw=await request.text();if(raw.length>2048)return json({error:"payload_too_large"},413);body=JSON.parse(raw);}
@@ -85,7 +85,7 @@ export default {
                    user_id:principal.userId,app_id:principal.appId};
   try{
    const result=await env.BATTERY_ENGINE.fetch(new Request("https://battery-engine.internal/v1/"+op,{
-    method:"POST",headers:{"Content-Type":"application/json","X-Verified-By":"starry-battery-gateway"},
+    method:"POST",headers:{"Content-Type":"application/json","X-Battery-Internal-Authorization":"Bearer "+env.BATTERY_ENGINE_SECRET},
     body:JSON.stringify(forwarded)}));
    return new Response(result.body,{status:result.status,headers:{"content-type":"application/json; charset=utf-8","cache-control":"no-store"}});
   }catch{return json({error:"battery_engine_unavailable"},503);}
