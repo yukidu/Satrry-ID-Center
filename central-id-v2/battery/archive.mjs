@@ -38,11 +38,11 @@ export async function archiveOldLedgerRows(db,bucket,now=Date.now(),limit=10){
  }
  return {checked:(q.results||[]).length,archived,failed};
 }
-export async function readArchivedLedger(db,bucket,userId,beforeMs=Number.MAX_SAFE_INTEGER,limit=50){
+export async function readArchivedLedger(db,bucket,userId,beforeMs=Number.MAX_SAFE_INTEGER,limit=50,beforeId="~"){
  if(!db?.prepare||!bucket?.get)throw Error("archive_bindings_unavailable");
  if(!/^[A-Za-z0-9_-]{4,180}$/.test(userId||"")||!Number.isSafeInteger(beforeMs)||
-   !Number.isSafeInteger(limit)||limit<1||limit>50)throw Error("invalid_archive_query");
- const q=await db.prepare("SELECT entry_id,object_key,digest_sha256 FROM battery_archive_index WHERE user_id=? AND created_at_ms<? ORDER BY created_at_ms DESC,entry_id DESC LIMIT ?").bind(userId,beforeMs,limit).all();
+   !Number.isSafeInteger(limit)||limit<1||limit>50||!(/^[A-Za-z0-9_-]{8,120}$/.test(beforeId)||beforeId==="~"))throw Error("invalid_archive_query");
+ const q=await db.prepare("SELECT entry_id,object_key,digest_sha256 FROM battery_archive_index WHERE user_id=? AND (created_at_ms<? OR (created_at_ms=? AND entry_id<?)) ORDER BY created_at_ms DESC,entry_id DESC LIMIT ?").bind(userId,beforeMs,beforeMs,beforeId,limit).all();
  const rows=[];
  for(const row of q.results||[]){
   const obj=await bucket.get(row.object_key);
